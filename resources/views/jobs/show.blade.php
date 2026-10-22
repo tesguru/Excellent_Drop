@@ -4,45 +4,56 @@
 @section('subtitle', $runId)
 
 @section('content')
-    <a href="{{ url('/jobs') }}" class="inline-block text-sm font-medium text-ink-900 underline dark:text-white">&larr; All jobs</a>
+    <a href="{{ url('/jobs') }}" class="btn btn-ghost w-fit px-3 py-1.5 text-xs">
+        <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m5 5-5-5 5-5" />
+        </svg>
+        All jobs
+    </a>
 
-    <div class="mt-4 overflow-hidden rounded-xl border border-ink-200 bg-white dark:border-ink-800 dark:bg-ink-900">
+    <div class="card overflow-hidden">
         <div class="overflow-x-auto">
             <table class="w-full text-left text-sm">
-                <thead class="border-b border-ink-200 bg-ink-50 text-xs uppercase tracking-wide text-ink-500 dark:border-ink-800 dark:bg-ink-950 dark:text-ink-400">
+                <thead class="border-b text-xs uppercase tracking-wider muted" style="border-color: var(--border); background: var(--surface-2)">
                     <tr>
-                        <th class="px-4 py-3 font-medium">Step</th>
-                        <th class="px-4 py-3 font-medium">TLD</th>
-                        <th class="px-4 py-3 font-medium">Status</th>
-                        <th class="px-4 py-3 font-medium">Started</th>
-                        <th class="px-4 py-3 font-medium">Duration</th>
-                        <th class="px-4 py-3 font-medium">Rows</th>
-                        <th class="px-4 py-3 font-medium">Message</th>
+                        <th class="px-4 py-3 font-semibold">Step</th>
+                        <th class="px-4 py-3 font-semibold">TLD</th>
+                        <th class="px-4 py-3 font-semibold">Status</th>
+                        <th class="px-4 py-3 font-semibold">Started</th>
+                        <th class="px-4 py-3 font-semibold">Duration</th>
+                        <th class="px-4 py-3 font-semibold">Rows</th>
+                        <th class="px-4 py-3 font-semibold">Message</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-ink-200 dark:divide-ink-800">
+                <tbody>
                     @forelse ($steps as $step)
-                        <tr>
+                        <tr class="border-b last:border-0 align-top" style="border-color: var(--border)">
                             <td class="px-4 py-3 font-medium">{{ $step['step'] }}</td>
-                            <td class="px-4 py-3 font-mono text-xs">{{ $step['tld'] ?? '-' }}</td>
+                            <td class="px-4 py-3 font-mono text-xs muted">{{ $step['tld'] ?? '-' }}</td>
                             <td class="px-4 py-3">
-                                <span class="rounded-md px-2 py-0.5 text-xs font-medium {{ $step['status'] === 'failed' ? 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300' : ($step['status'] === 'success' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : ($step['status'] === 'skipped' ? 'bg-ink-100 text-ink-600 dark:bg-ink-800 dark:text-ink-300' : 'bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300')) }}">
-                                    {{ $step['status'] }}
-                                </span>
+                                @php
+                                    $stepStyle = match ($step['status']) {
+                                        'failed' => 'background: rgb(244 63 94 / 0.15); color: rgb(251 113 133)',
+                                        'success' => 'background: rgb(16 185 129 / 0.15); color: rgb(52 211 153)',
+                                        'skipped' => 'background: var(--surface-2); color: var(--muted)',
+                                        default => 'background: rgb(245 158 11 / 0.15); color: rgb(251 191 36)',
+                                    };
+                                @endphp
+                                <span class="chip" style="{{ $stepStyle }}">{{ $step['status'] }}</span>
                             </td>
-                            <td class="px-4 py-3 text-xs text-ink-500 dark:text-ink-400">{{ $step['started_at'] ?? '-' }}</td>
-                            <td class="px-4 py-3 text-xs text-ink-500 dark:text-ink-400">{{ $step['duration'] !== null ? $step['duration'].'s' : '-' }}</td>
+                            <td class="px-4 py-3 text-xs muted tabular-nums">{{ $step['started_at'] ?? '-' }}</td>
+                            <td class="px-4 py-3 text-xs muted tabular-nums">{{ $step['duration'] !== null ? $step['duration'].'s' : '-' }}</td>
                             <td class="px-4 py-3 tabular-nums">{{ $step['rows'] !== null ? number_format($step['rows']) : '-' }}</td>
-                            <td class="px-4 py-3 text-xs text-ink-600 dark:text-ink-300">
+                            <td class="px-4 py-3 text-xs muted">
                                 {{ $step['message'] ?? '' }}
                                 @if (! empty($step['error']))
-                                    <span class="mt-1 block text-rose-600 dark:text-rose-400">{{ $step['error'] }}</span>
+                                    <span class="mt-1 block" style="color: rgb(251 113 133)">{{ $step['error'] }}</span>
                                 @endif
                             </td>
                         </tr>
                     @empty
                         <tr>
-                            <td colspan="7" class="px-4 py-8 text-center text-sm text-ink-500 dark:text-ink-400">No steps found for this run.</td>
+                            <td colspan="7" class="px-4 py-12 text-center text-sm muted">No steps found for this run.</td>
                         </tr>
                     @endforelse
                 </tbody>

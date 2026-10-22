@@ -4,33 +4,32 @@
 @section('subtitle', 'Domains you keep an eye on')
 
 @section('content')
-    <form id="watchlist-form" class="flex flex-wrap items-end gap-3 rounded-xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900">
+    <form id="watchlist-form" class="card flex flex-wrap items-end gap-3 p-4">
         <div class="min-w-56 flex-1">
-            <label for="domain" class="block text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">Domain</label>
+            <label for="domain" class="label">Domain</label>
             <input id="domain" name="domain" type="text" placeholder="example.com" required
-                   class="mt-1 w-full rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm outline-none focus:border-ink-500 dark:border-ink-700 dark:bg-ink-950 dark:text-white">
+                   class="field mt-2">
         </div>
         <div>
-            <label for="status" class="block text-xs font-medium uppercase tracking-wide text-ink-500 dark:text-ink-400">Status</label>
-            <select id="status" name="status"
-                    class="mt-1 rounded-lg border border-ink-300 bg-white px-3 py-2 text-sm outline-none focus:border-ink-500 dark:border-ink-700 dark:bg-ink-950 dark:text-white">
+            <label for="status" class="label">Status</label>
+            <select id="status" name="status" class="field mt-2 cursor-pointer">
                 @foreach ($statuses as $status)
                     <option value="{{ $status }}">{{ ucfirst($status) }}</option>
                 @endforeach
             </select>
         </div>
-        <button type="submit" class="rounded-lg bg-ink-900 px-4 py-2 text-sm font-semibold text-white dark:bg-white dark:text-ink-900">Add</button>
+        <button type="submit" class="btn btn-primary">Add</button>
     </form>
 
     <p id="watchlist-message" class="hidden text-sm"></p>
 
     <div id="watchlist" class="space-y-4">
         @forelse ($entries as $entry)
-            <div class="rounded-xl border border-ink-200 bg-white p-4 dark:border-ink-800 dark:bg-ink-900" data-watch-entry data-domain="{{ $entry['domain'] }}">
+            <div class="card p-4" data-watch-entry data-domain="{{ $entry['domain'] }}">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
                         <p class="font-mono text-sm font-semibold">{{ $entry['domain'] }}</p>
-                        <p class="mt-1 text-xs text-ink-500 dark:text-ink-400">
+                        <p class="mt-1.5 text-xs muted">
                             Added {{ $entry['created_at'] }}
                             @if ($entry['candidate'])
                                 &middot; score {{ number_format((float) $entry['candidate']['score'], 1) }}
@@ -42,28 +41,28 @@
                     </div>
 
                     <div class="flex items-center gap-2">
-                        <select class="watch-status rounded-lg border border-ink-300 bg-white px-2 py-1 text-xs outline-none dark:border-ink-700 dark:bg-ink-950 dark:text-ink-200">
+                        <select class="watch-status field w-auto px-2 py-1 text-xs cursor-pointer">
                             @foreach ($statuses as $status)
                                 <option value="{{ $status }}" @selected($status === $entry['status'])>{{ ucfirst($status) }}</option>
                             @endforeach
                         </select>
-                        <button type="button" class="watch-remove rounded-lg border border-ink-300 px-2.5 py-1 text-xs font-medium text-ink-600 hover:bg-ink-100 dark:border-ink-700 dark:text-ink-300 dark:hover:bg-ink-800">Remove</button>
+                        <button type="button" class="watch-remove btn btn-ghost px-2.5 py-1 text-xs">Remove</button>
                     </div>
                 </div>
 
                 @if (! empty($entry['candidate']['weaker_found']))
                     <ul class="mt-3 flex flex-wrap gap-2">
-                        @foreach ($entry['candidate']['weaker_found'] as $index => $domain)
-                            <li class="rounded-md bg-ink-100 px-2 py-1 font-mono text-xs dark:bg-ink-800 dark:text-ink-300">{{ $domain }}</li>
+                        @foreach ($entry['candidate']['weaker_found'] as $domain)
+                            <li class="rounded-lg px-2 py-1 font-mono text-xs" style="background: var(--surface-2)">{{ $domain }}</li>
                         @endforeach
                     </ul>
                 @endif
 
                 @if (! empty($entry['notes_list']))
-                    <ul class="mt-3 space-y-1 border-l-2 border-ink-200 pl-3 text-sm dark:border-ink-800">
+                    <ul class="mt-3 space-y-1.5 border-l-2 pl-3 text-sm" style="border-color: rgb(var(--glow) / 0.4)">
                         @foreach ($entry['notes_list'] as $note)
                             <li>
-                                <span class="text-ink-500 dark:text-ink-400">{{ $note['created_at'] }}</span>
+                                <span class="text-xs muted">{{ $note['created_at'] }}</span>
                                 <span class="ml-2">{{ $note['body'] }}</span>
                             </li>
                         @endforeach
@@ -73,14 +72,21 @@
                 <form class="mt-3 flex gap-2" data-note-form>
                     @csrf
                     <input type="text" name="body" placeholder="Add a note" required
-                           class="flex-1 rounded-lg border border-ink-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-ink-500 dark:border-ink-700 dark:bg-ink-950 dark:text-white">
-                    <button type="submit" class="rounded-lg border border-ink-300 px-3 py-1.5 text-sm font-medium text-ink-600 hover:bg-ink-100 dark:border-ink-700 dark:text-ink-300 dark:hover:bg-ink-800">Save note</button>
+                           class="field flex-1">
+                    <button type="submit" class="btn btn-ghost">Save note</button>
                 </form>
             </div>
         @empty
-            <p class="rounded-xl border border-dashed border-ink-300 p-8 text-center text-sm text-ink-500 dark:border-ink-700 dark:text-ink-400">
-                The watchlist is empty.
-            </p>
+            <div class="card grid place-items-center border-dashed p-12 text-center" style="border-style: dashed">
+                <div class="mx-auto max-w-sm">
+                    <span class="mx-auto grid h-12 w-12 place-items-center rounded-2xl" style="background: rgb(var(--glow) / 0.12)">
+                        <svg class="h-6 w-6" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" style="color: var(--accent)">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5c-4 0-7 3-8.5 7.5C5 16.5 8 19.5 12 19.5s7-3 8.5-7.5C19 7.5 16 4.5 12 4.5Zm0 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" />
+                        </svg>
+                    </span>
+                    <p class="mt-4 text-sm muted">The watchlist is empty. Add a domain above to start tracking it.</p>
+                </div>
+            </div>
         @endforelse
     </div>
 @endsection

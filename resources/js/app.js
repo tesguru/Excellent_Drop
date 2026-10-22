@@ -56,11 +56,25 @@
 
     // Theme ------------------------------------------------------------------
     const themeToggle = document.getElementById('theme-toggle');
+    const themeIcons = document.querySelectorAll('[data-theme-icon]');
+
+    function syncThemeIcons() {
+        const isDark = document.documentElement.classList.contains('dark');
+
+        themeIcons.forEach(function (icon) {
+            const match = icon.getAttribute('data-theme-icon') === (isDark ? 'dark' : 'light');
+
+            icon.classList.toggle('hidden', !match);
+        });
+    }
+
+    syncThemeIcons();
 
     themeToggle?.addEventListener('click', function () {
         const isDark = document.documentElement.classList.toggle('dark');
 
         localStorage.setItem('dropwatch-theme', isDark ? 'dark' : 'light');
+        syncThemeIcons();
     });
 
     // Worker heartbeat -------------------------------------------------------
@@ -76,11 +90,13 @@
             const data = await request('GET', '/api/overview');
             const alive = Boolean(data.worker && data.worker.alive);
 
-            workerDot.className = 'h-2 w-2 rounded-full ' + (alive ? 'bg-emerald-500' : 'bg-rose-500');
+            workerDot.className = 'relative inline-flex h-2 w-2 rounded-full ' + (alive ? 'bg-emerald-400' : 'bg-rose-500');
             workerLabel.textContent = alive ? 'Worker online' : 'Worker offline';
+            workerLabel.style.color = alive ? '' : 'rgb(251 113 133)';
         } catch (error) {
-            workerDot.className = 'h-2 w-2 rounded-full bg-rose-500';
+            workerDot.className = 'relative inline-flex h-2 w-2 rounded-full bg-rose-500';
             workerLabel.textContent = 'Worker offline';
+            workerLabel.style.color = 'rgb(251 113 133)';
         }
     }
 
@@ -104,12 +120,9 @@
 
                 button.setAttribute('data-watched', watched ? '0' : '1');
                 button.textContent = watched ? 'Watch' : 'Watching';
-                button.classList.toggle('border-ink-900', !watched);
-                button.classList.toggle('bg-ink-900', !watched);
-                button.classList.toggle('text-white', !watched);
-                button.classList.toggle('dark:border-white', !watched);
-                button.classList.toggle('dark:bg-white', !watched);
-                button.classList.toggle('dark:text-ink-900', !watched);
+                button.classList.toggle('border-sky-400', !watched);
+                button.classList.toggle('text-sky-300', !watched);
+                button.classList.toggle('bg-sky-500/10', !watched);
             } catch (error) {
                 window.alert(error.message);
             }
