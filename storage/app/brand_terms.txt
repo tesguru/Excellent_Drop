@@ -1,0 +1,2 @@
+# One brand per line. A name in this list is always flagged for a manual
+# brand review, even when it is not a single dictionary word.

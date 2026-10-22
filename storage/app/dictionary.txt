@@ -1,0 +1,6 @@
+# Extra words for the name quality score, one word per line.
+# The system word list (/usr/share/dict/words) is used as well.
+plumbing
+plumber
+roofing
+bakery

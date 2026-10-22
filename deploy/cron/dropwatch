@@ -1,0 +1,10 @@
+# DropWatch scheduler
+#
+# Install with:
+#   sudo crontab -e   and add the line below, or
+#   sudo cp deploy/cron/dropwatch /etc/cron.d/dropwatch && sudo chown root:root /etc/cron.d/dropwatch
+#
+# The scheduler dispatches the daily zone pipeline, the worker heartbeat and
+# the housekeeping command.
+
+* * * * * cd /var/www/dropwatch && /usr/bin/php artisan schedule:run >> /dev/null 2>&1

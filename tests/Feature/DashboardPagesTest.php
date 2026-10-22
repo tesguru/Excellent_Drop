@@ -1,0 +1,143 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\JobRun;
+use App\Models\User;
+use App\Services\CandidateRepository;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\Fakes\FakeCandidateRepository;
+use Tests\TestCase;
+
+class DashboardPagesTest extends TestCase
+{
+    use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->app->instance(CandidateRepository::class, new FakeCandidateRepository(
+            candidates: [
+                [
+                    'event_date' => now()->format('Y-m-d'),
+                    'name' => 'acmeplumbing',
+                    'domain' => 'acmeplumbing.com',
+                    'weaker_found' => ['acme-plumbing.net', 'acmeplumbing.net'],
+                    'weaker_types' => ['hyphen', 'other_tld'],
+                    'weaker_count' => 2,
+                    'tld_count' => 1,
+                    'is_short' => false,
+                    'score' => 91.5,
+                    'rdap_status' => 'redemption period',
+                    'predicted_drop_date' => now()->addDays(35)->format('Y-m-d'),
+                    'watchlisted' => false,
+                    'restored' => false,
+                ],
+                [
+                    'event_date' => now()->format('Y-m-d'),
+                    'name' => 'oak',
+                    'domain' => 'oak.com',
+                    'weaker_found' => ['oak.net'],
+                    'weaker_types' => ['other_tld'],
+                    'weaker_count' => 1,
+                    'tld_count' => 1,
+                    'is_short' => true,
+                    'score' => 72.0,
+                    'rdap_status' => null,
+                    'predicted_drop_date' => null,
+                    'watchlisted' => false,
+                    'restored' => false,
+                ],
+            ],
+            removed: ['acmeplumbing'],
+            added: ['newname'],
+        ));
+
+        $this->actingAs(User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'secret123',
+        ]));
+    }
+
+    public function test_the_overview_shows_the_candidates(): void
+    {
+        $this->get('/')->assertOk()->assertSee('acmeplumbing.com')->assertSee('acme-plumbing.net');
+    }
+
+    public function test_the_daily_list_shows_the_removed_names(): void
+    {
+        $this->get('/daily')->assertOk()->assertSee('acmeplumbing');
+    }
+
+    public function test_the_short_badge_and_the_short_filter_are_available(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('Is short')
+            ->assertSee('title="Name has 4 or fewer characters"', false)
+            ->assertSee('oak.com');
+
+        $this->get('/?short=1')
+            ->assertOk()
+            ->assertSee('oak.com')
+            ->assertSee('Show all')
+            ->assertDontSee('acmeplumbing.com');
+
+        $this->get('/daily?short=1')
+            ->assertOk()
+            ->assertSee('oak.com')
+            ->assertSee('Show all')
+            ->assertDontSee('acmeplumbing.com');
+
+        $this->getJson('/api/daily?short=1')
+            ->assertOk()
+            ->assertJsonPath('short_only', true);
+
+        $this->getJson('/api/overview?short=1')
+            ->assertOk()
+            ->assertJsonPath('short_only', true);
+    }
+
+    public function test_the_search_page_shows_the_results(): void
+    {
+        $this->get('/search?q=acmeplumbing')->assertOk()->assertSee('acmeplumbing.com');
+    }
+
+    public function test_the_jobs_pages_render(): void
+    {
+        JobRun::create([
+            'run_id' => '11111111-1111-4111-8111-111111111111',
+            'step' => 'diff',
+            'status' => 'success',
+            'rows' => 3,
+            'message' => 'com: 2 removed, 1 added',
+            'queued_at' => now(),
+            'started_at' => now(),
+            'finished_at' => now(),
+        ]);
+
+        $this->get('/jobs')->assertOk()->assertSee('diff');
+        $this->get('/jobs/11111111-1111-4111-8111-111111111111')->assertOk()->assertSee('com: 2 removed, 1 added');
+    }
+
+    public function test_the_zones_page_renders(): void
+    {
+        $this->get('/zones')->assertOk();
+    }
+
+    public function test_the_json_endpoints_answer(): void
+    {
+        $this->getJson('/api/overview')->assertOk()->assertJsonStructure([
+            'counts' => ['removed', 'added', 'candidates'],
+            'worker' => ['alive'],
+            'top_candidates',
+        ]);
+
+        $this->getJson('/api/daily')->assertOk()->assertJsonStructure(['counts', 'removed_names', 'candidates']);
+        $this->getJson('/api/search?q=acmeplumbing')->assertOk()->assertJsonStructure(['query', 'results']);
+        $this->getJson('/api/jobs')->assertOk()->assertJsonStructure(['runs']);
+        $this->getJson('/api/zones')->assertOk()->assertJsonStructure(['zones']);
+    }
+}

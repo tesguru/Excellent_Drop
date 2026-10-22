@@ -1,0 +1,6 @@
+*
+!private/
+!public/
+!.gitignore
+!dictionary.txt
+!brand_terms.txt
