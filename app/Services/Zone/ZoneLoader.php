@@ -30,9 +30,9 @@ class ZoneLoader
         }
 
         $sql = sprintf(
-            'INSERT INTO %s.zone_names (snapshot_date, tld, name, name_rev, ns) '
-            .'SELECT {d:Date}, {tld:String}, name, reverse(name), ns '
-            ."FROM input('name String, ns String') FORMAT TSV",
+            'INSERT INTO %s.zone_names (snapshot_date, tld, name, name_rev) '
+            .'SELECT {d:Date}, {tld:String}, name, reverse(name) '
+            ."FROM input('name String') FORMAT TSV",
             $this->database,
         );
 

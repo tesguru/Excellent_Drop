@@ -56,6 +56,10 @@ class LoadSnapshot implements ShouldQueue
 
             $rows = $loader->load($this->tld, $namesPath, $snapshotDate);
 
+            // The extracted list has served its purpose once it is in
+            // ClickHouse. Removing it now caps the disk use of a full run.
+            @unlink($namesPath);
+
             $registry->mark($this->tld, [
                 'status' => 'loaded',
                 'rows' => $rows,
@@ -78,28 +82,23 @@ class LoadSnapshot implements ShouldQueue
     {
         $today = now()->format('Y-m-d');
 
-        $downloaded = ZoneTld::whereDate('last_download_at', $today)
-            ->whereIn('status', ['downloaded', 'loaded'])
-            ->count();
+        $relevant = fn () => ZoneTld::whereDate('last_download_at', $today)
+            ->whereIn('status', ['downloaded', 'extracted', 'loaded']);
 
-        $loaded = ZoneTld::whereDate('last_download_at', $today)
-            ->where('status', 'loaded')
-            ->count();
+        $expected = $relevant()->count();
+        $loaded = $relevant()->where('status', 'loaded')->count();
 
-        if ($downloaded === 0 || $loaded < $downloaded) {
+        if ($expected === 0 || $loaded < $expected) {
             return;
         }
 
-        $lock = cache()->lock('zones:diff-dispatch', 300);
-
-        if (! $lock->get()) {
+        // Loading jobs for a run finish one after another, so the readiness
+        // check above is true for every remaining load once the last zone is
+        // in. Remember the dispatch per run so it only happens once.
+        if (! cache()->add('zones:diff:'.$this->runId, true, now()->addDay())) {
             return;
         }
 
-        try {
-            DiffZones::dispatch($this->runId)->onQueue((string) config('zones.queue'));
-        } finally {
-            $lock->release();
-        }
+        DiffZones::dispatch($this->runId)->onQueue((string) config('zones.queue'));
     }
 }

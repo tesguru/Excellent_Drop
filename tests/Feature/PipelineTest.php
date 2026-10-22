@@ -280,11 +280,7 @@ class PipelineTest extends TestCase
     {
         $path = sys_get_temp_dir().'/dropwatch-pipeline-'.bin2hex(random_bytes(4)).'.tsv';
 
-        $lines = [];
-
-        foreach ($names as $name) {
-            $lines[] = $name."\tns1.".substr(sha1($name), 0, 8).'.example.com';
-        }
+        $lines = $names;
 
         file_put_contents($path, $lines === [] ? '' : implode("\n", $lines)."\n");
 

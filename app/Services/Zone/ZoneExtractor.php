@@ -42,11 +42,7 @@ BEGIN { FS = "[ \t]+" }
     if (index(label, ".") > 0) next
     if (index(label, "\\") > 0) next
 
-    rdata = ""
-    if (ns_index + 1 <= NF) rdata = $(ns_index + 1)
-    sub(/\.$/, "", rdata)
-
-    print tolower(label) "\t" tolower(rdata)
+    print tolower(label)
 }
 AWK;
 
@@ -83,7 +79,7 @@ AWK;
             escapeshellarg($outPath),
         );
 
-        $process = new Process(['/bin/sh', '-c', $command], null, null, null, 0);
+        $process = new Process(['/bin/bash', '-c', $command], null, null, null, 0);
         $process->run();
 
         if (! $process->isSuccessful()) {
@@ -122,7 +118,7 @@ AWK;
             escapeshellarg($gzPath),
         );
 
-        $process = new Process(['/bin/sh', '-c', $command], null, null, null, 120);
+        $process = new Process(['/bin/bash', '-c', $command], null, null, null, 120);
         $process->run();
 
         $lines = array_values(array_filter(

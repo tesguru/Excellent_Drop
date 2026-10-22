@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Services\TracksJobRun;
 use App\Services\Zone\ZoneExtractor;
 use App\Services\ZonePaths;
+use App\Services\ZoneRegistry;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -73,6 +74,13 @@ class ExtractNames implements ShouldQueue
             $outPath = $paths->namesFile($this->tld);
 
             $result = $extractor->extract($gzPath, $this->tld, $outPath);
+
+            // The raw zone file is only needed for the extraction. Releasing it
+            // here keeps a full daily run inside the disk budget; cleanup would
+            // otherwise hold every zone file until the end of the chain.
+            if (! (bool) config('zones.keep_raw', false)) {
+                @unlink($gzPath);
+            }
 
             $this->finishRun($result['rows'], sprintf(
                 'Extracted %s names (%s bytes) from %s',
