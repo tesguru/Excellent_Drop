@@ -23,6 +23,10 @@ class ClickHouseClient
     /** @var array<int, string>|null */
     private ?array $binary = null;
 
+    private ?\CurlHandle $http = null;
+
+    private bool $httpUnavailable = false;
+
     /**
      * @param  array<string, mixed>  $config
      */
@@ -129,7 +133,13 @@ class ClickHouseClient
      */
     public function rows(string $sql, array $params = []): array
     {
-        $out = trim($this->run($sql, $params, ['--format', 'JSONEachRow']));
+        if ($this->canUseHttp()) {
+            $out = $this->httpQuery($sql, $params);
+        } else {
+            $out = $this->run($sql, $params, ['--format', 'JSONEachRow']);
+        }
+
+        $out = trim($out);
 
         if ($out === '') {
             return [];
@@ -148,6 +158,95 @@ class ClickHouseClient
         }
 
         return $rows;
+    }
+
+    /**
+     * Small lookups account for almost every query in a candidate run, so
+     * they go through ClickHouse's HTTP interface. Reusing one curl handle
+     * keeps the connection alive instead of paying ~200ms to start the
+     * clickhouse-client binary for every row.
+     *
+     * @param  array<string, mixed>  $params
+     */
+    private function httpQuery(string $sql, array $params = []): string
+    {
+        $query = [];
+
+        foreach ($params as $name => $value) {
+            $query['param_'.$name] = $this->formatParam($value);
+        }
+
+        $url = sprintf(
+            'http://%s:%d/?%s',
+            $this->config['host'],
+            (int) $this->config['http_port'],
+            http_build_query(array_merge([
+                'database' => $this->database(),
+                'default_format' => 'JSONEachRow',
+            ], $query), '', '&', PHP_QUERY_RFC3986),
+        );
+
+        $handle = $this->httpHandle();
+
+        curl_setopt_array($handle, [
+            CURLOPT_URL => $url,
+            CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => $sql,
+            CURLOPT_HTTPHEADER => $this->httpHeaders(),
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_TIMEOUT => (int) $this->config['timeout'],
+        ]);
+
+        $body = curl_exec($handle);
+
+        if ($body === false) {
+            if (curl_errno($handle) === CURLE_COULDNT_CONNECT) {
+                $this->httpUnavailable = true;
+
+                return $this->run($sql, $params, ['--format', 'JSONEachRow']);
+            }
+
+            throw new ClickHouseException('ClickHouse HTTP request failed: '.curl_error($handle));
+        }
+
+        $status = (int) curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
+
+        if ($status !== 200) {
+            throw new ClickHouseException('ClickHouse HTTP request failed ('.$status.'): '.(string) $body, $status);
+        }
+
+        return (string) $body;
+    }
+
+    private function canUseHttp(): bool
+    {
+        return ! $this->httpUnavailable
+            && (int) ($this->config['http_port'] ?? 0) > 0
+            && extension_loaded('curl');
+    }
+
+    private function httpHandle(): \CurlHandle
+    {
+        return $this->http ??= curl_init();
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function httpHeaders(): array
+    {
+        $headers = ['Content-Type: text/plain; charset=UTF-8'];
+
+        if (! empty($this->config['user'])) {
+            $headers[] = 'X-ClickHouse-User: '.$this->config['user'];
+        }
+
+        if (! empty($this->config['password'])) {
+            $headers[] = 'X-ClickHouse-Key: '.$this->config['password'];
+        }
+
+        return $headers;
     }
 
     /**
