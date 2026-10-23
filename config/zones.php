@@ -63,6 +63,7 @@ return [
     'stale_max_retries' => (int) env('ZONE_STALE_MAX_RETRIES', 4),
 
     'queue' => env('ZONES_QUEUE', 'zones'),
+    'heartbeat_queue' => env('ZONE_HEARTBEAT_QUEUE', 'heartbeat'),
     'schedule' => env('ZONES_SCHEDULE', '0 8 * * *'),
     'heartbeat_cache_key' => 'zones:worker_heartbeat',
     'heartbeat_stale_seconds' => (int) env('ZONES_HEARTBEAT_STALE_SECONDS', 180),

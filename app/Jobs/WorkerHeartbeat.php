@@ -25,7 +25,9 @@ class WorkerHeartbeat implements ShouldQueue
 
     public function __construct()
     {
-        $this->onQueue((string) config('zones.queue'));
+        // The heartbeat must not sit behind a multi-hour pipeline run, so it
+        // has its own queue served by a dedicated worker.
+        $this->onQueue((string) config('zones.heartbeat_queue', 'heartbeat'));
     }
 
     public function handle(): void
