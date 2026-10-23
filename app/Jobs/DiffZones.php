@@ -102,35 +102,22 @@ class DiffZones implements ShouldQueue
      */
     private function markRestored(ClickHouseClient $clickhouse, string $today): int
     {
+        // The added set can hold hundreds of thousands of names for .com, so
+        // pass it as a join instead of a giant IN (...) parameter list.
         $rows = $clickhouse->rows(
             sprintf(
-                'SELECT name FROM %s.zone_events WHERE event_date = {d:Date} AND tld = {tld:String} AND event = {event:String}',
+                'SELECT DISTINCT a.name FROM %s.zone_events AS a '
+                .'INNER JOIN %s.zone_events AS b ON a.name = b.name '
+                .'WHERE a.tld = {tld:String} AND a.event = {removed:String} AND a.event_date < {d:Date} '
+                .'AND b.tld = {tld:String} AND b.event = {added:String} AND b.event_date = {d:Date}',
+                $clickhouse->database(),
                 $clickhouse->database(),
             ),
-            ['d' => $today, 'tld' => 'com', 'event' => 'added'],
+            ['tld' => 'com', 'removed' => 'removed', 'added' => 'added', 'd' => $today],
         );
 
-        if ($rows === []) {
-            return 0;
-        }
-
-        $names = array_values(array_filter(array_map(fn (array $row) => (string) ($row['name'] ?? ''), $rows)));
-
-        if ($names === []) {
-            return 0;
-        }
-
-        $previouslyRemoved = $clickhouse->rows(
-            sprintf(
-                'SELECT DISTINCT name FROM %s.zone_events '
-                .'WHERE tld = {tld:String} AND event = {event:String} AND name IN ({names:Array(String)}) '
-                .'AND event_date < {d:Date}',
-                $clickhouse->database(),
-            ),
-            ['tld' => 'com', 'event' => 'removed', 'names' => $names, 'd' => $today],
-        );
-
-        $restored = array_map(fn (array $row) => (string) ($row['name'] ?? ''), $previouslyRemoved);
+        $restored = array_map(fn (array $row) => (string) ($row['name'] ?? ''), $rows);
+        $restored = array_values(array_filter($restored));
 
         if ($restored === []) {
             return 0;
