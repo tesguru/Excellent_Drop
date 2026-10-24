@@ -340,11 +340,11 @@ class ZoneSearchTest extends TestCase
     {
         $path = database_path('clickhouse/schema.sql');
 
-        $sql = str_replace(
-            ['zones.', 'CREATE DATABASE IF NOT EXISTS zones'],
-            [self::DATABASE.'.', 'CREATE DATABASE IF NOT EXISTS '.self::DATABASE],
-            (string) file_get_contents($path),
-        );
+        // The test database is created once by an administrator; a limited
+        // ClickHouse user must be able to run the suite without CREATE DATABASE.
+        $sql = (string) file_get_contents($path);
+        $sql = preg_replace('/^\s*CREATE DATABASE IF NOT EXISTS\s+zones\s*;\s*$/mi', '', $sql) ?? $sql;
+        $sql = str_replace('zones.', self::DATABASE.'.', $sql);
 
         $file = tempnam(sys_get_temp_dir(), 'dropwatch-schema-').'.sql';
 
