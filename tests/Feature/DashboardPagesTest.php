@@ -101,6 +101,78 @@ class DashboardPagesTest extends TestCase
         $this->get('/daily')->assertOk()->assertSee('acmeplumbing');
     }
 
+    public function test_the_daily_candidates_open_in_a_modal_with_their_variations(): void
+    {
+        $this->get('/daily')
+            ->assertOk()
+            ->assertSee('data-modal-open="daily-candidate-0"', false)
+            ->assertSee('<dialog', false)
+            ->assertSee('Weaker variations')
+            ->assertSee('acme-plumbing.net')
+            ->assertSee('RDAP check')
+            ->assertSee('Open RDAP')
+            ->assertSee('Track this name')
+            ->assertSee('2 variations');
+    }
+
+    public function test_daily_candidates_can_be_searched_by_keyword(): void
+    {
+        $this->get('/daily?q=oak')
+            ->assertOk()
+            ->assertSee('oak.com')
+            ->assertDontSee('acmeplumbing.com');
+
+        $this->get('/daily?q=acmeplumbing.com')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com')
+            ->assertDontSee('oak.com');
+
+        $this->getJson('/api/daily?q=acmeplumbing.com')
+            ->assertOk()
+            ->assertJsonPath('query', 'acmeplumbing.com')
+            ->assertJsonCount(1, 'candidates')
+            ->assertJsonPath('candidates.0.domain', 'acmeplumbing.com');
+    }
+
+    public function test_the_daily_candidates_are_paginated(): void
+    {
+        $candidates = [];
+
+        for ($index = 0; $index < 30; $index++) {
+            $candidates[] = [
+                'event_date' => now()->format('Y-m-d'),
+                'name' => 'candidate'.$index,
+                'domain' => 'candidate'.$index.'.com',
+                'weaker_found' => [],
+                'weaker_types' => [],
+                'weaker_count' => 0,
+                'tld_count' => 1,
+                'exact_tld_count' => 1,
+                'is_short' => false,
+                'score' => 100 - $index,
+                'estimated_drop_date' => now()->addDays(35)->format('Y-m-d'),
+                'watchlisted' => false,
+            ];
+        }
+
+        $this->app->instance(CandidateRepository::class, new FakeCandidateRepository(candidates: $candidates));
+
+        $this->get('/daily?page=2')
+            ->assertOk()
+            ->assertSee('candidate25.com')
+            ->assertSee('Page 2 of 2')
+            ->assertSee('26&ndash;30', false)
+            ->assertDontSee('candidate0.com');
+
+        $this->getJson('/api/daily?page=2')
+            ->assertOk()
+            ->assertJsonPath('pagination.page', 2)
+            ->assertJsonPath('pagination.total', 30)
+            ->assertJsonPath('pagination.pages', 2)
+            ->assertJsonCount(5, 'candidates')
+            ->assertJsonPath('candidates.0.domain', 'candidate25.com');
+    }
+
     public function test_the_short_badge_and_the_short_filter_are_available(): void
     {
         $this->get('/')

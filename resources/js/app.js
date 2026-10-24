@@ -106,6 +106,28 @@
     }
 
     // Watch toggles on the candidate lists ----------------------------------
+    function syncWatch(domain, watched) {
+        document.querySelectorAll('.watch-toggle').forEach(function (button) {
+            if (button.getAttribute('data-domain') !== domain) {
+                return;
+            }
+
+            button.setAttribute('data-watched', watched ? '1' : '0');
+            button.textContent = watched ? 'Watching' : 'Watch';
+            button.classList.toggle('border-transparent', watched);
+            button.classList.toggle('border-[color:var(--border)]', !watched);
+            button.classList.toggle('muted', !watched);
+
+            if (watched) {
+                button.style.background = 'rgb(var(--glow) / 0.14)';
+                button.style.color = 'var(--accent)';
+            } else {
+                button.style.background = '';
+                button.style.color = '';
+            }
+        });
+    }
+
     document.querySelectorAll('.watch-toggle').forEach(function (button) {
         button.addEventListener('click', async function () {
             const domain = button.getAttribute('data-domain');
@@ -118,14 +140,128 @@
                     await request('POST', '/watchlist', { domain: domain, status: 'watching' });
                 }
 
-                button.setAttribute('data-watched', watched ? '0' : '1');
-                button.textContent = watched ? 'Watch' : 'Watching';
-                button.classList.toggle('border-sky-400', !watched);
-                button.classList.toggle('text-sky-300', !watched);
-                button.classList.toggle('bg-sky-500/10', !watched);
+                syncWatch(domain, !watched);
             } catch (error) {
                 window.alert(error.message);
             }
+        });
+    });
+
+    // Candidate detail modals ------------------------------------------------
+    document.querySelectorAll('[data-modal-open]').forEach(function (trigger) {
+        trigger.addEventListener('click', function () {
+            const dialog = document.getElementById(trigger.getAttribute('data-modal-open'));
+
+            if (!dialog) {
+                return;
+            }
+
+            if (typeof dialog.showModal === 'function') {
+                dialog.showModal();
+            } else {
+                dialog.setAttribute('open', '');
+            }
+        });
+    });
+
+    document.querySelectorAll('dialog[data-modal]').forEach(function (dialog) {
+        dialog.querySelectorAll('[data-modal-close]').forEach(function (button) {
+            button.addEventListener('click', function () {
+                if (typeof dialog.close === 'function') {
+                    dialog.close();
+                } else {
+                    dialog.removeAttribute('open');
+                }
+            });
+        });
+
+        dialog.addEventListener('click', function (event) {
+            if (event.target !== dialog) {
+                return;
+            }
+
+            const rect = dialog.getBoundingClientRect();
+            const inside = event.clientX >= rect.left && event.clientX <= rect.right
+                && event.clientY >= rect.top && event.clientY <= rect.bottom;
+
+            if (!inside && typeof dialog.close === 'function') {
+                dialog.close();
+            }
+        });
+    });
+
+    // Copy buttons -----------------------------------------------------------
+    function legacyCopy(value) {
+        const field = document.createElement('textarea');
+        field.value = value;
+        field.setAttribute('readonly', '');
+        field.style.position = 'fixed';
+        field.style.opacity = '0';
+        document.body.appendChild(field);
+        field.select();
+
+        let copied = false;
+
+        try {
+            copied = document.execCommand('copy');
+        } catch (error) {
+            copied = false;
+        }
+
+        field.remove();
+
+        return copied;
+    }
+
+    function copyText(value) {
+        if (legacyCopy(value)) {
+            return Promise.resolve(true);
+        }
+
+        if (!navigator.clipboard || !window.isSecureContext) {
+            return Promise.resolve(false);
+        }
+
+        // The clipboard prompt can hang in embedded browsers, so never let the
+        // button wait on it forever.
+        return new Promise(function (resolve) {
+            const timer = window.setTimeout(function () { resolve(false); }, 800);
+
+            navigator.clipboard.writeText(value).then(
+                function () {
+                    window.clearTimeout(timer);
+                    resolve(true);
+                },
+                function () {
+                    window.clearTimeout(timer);
+                    resolve(false);
+                },
+            );
+        });
+    }
+
+    document.querySelectorAll('[data-copy]').forEach(function (button) {
+        button.addEventListener('click', async function () {
+            const value = button.getAttribute('data-copy') || '';
+            const label = button.querySelector('[data-copy-label]');
+            const original = label ? label.textContent : button.textContent;
+
+            const sayCopied = function (text) {
+                if (label) {
+                    label.textContent = text;
+                } else {
+                    button.textContent = text;
+                }
+            };
+
+            if (!(await copyText(value))) {
+                window.alert('Could not copy the domain.');
+
+                return;
+            }
+
+            sayCopied('Copied');
+            window.setTimeout(function () { sayCopied(original); }, 1500);
         });
     });
 

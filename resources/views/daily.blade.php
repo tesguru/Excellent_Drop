@@ -10,6 +10,18 @@
             <input id="date" name="date" type="date" value="{{ $date }}" class="field mt-2">
         </div>
 
+        @if (($data['query'] ?? '') !== '')
+            <input type="hidden" name="q" value="{{ $data['query'] }}">
+        @endif
+
+        @if ($shortOnly)
+            <input type="hidden" name="short" value="1">
+        @endif
+
+        @if ($endingsOnly)
+            <input type="hidden" name="endings" value="1">
+        @endif
+
         @if (count($dates) > 0)
             <div>
                 <label for="dates" class="label">Days with data</label>
@@ -30,18 +42,13 @@
         </div>
     </form>
 
-    @include('partials.candidates', [
+    @include('partials.daily-candidates', [
         'candidates' => $data['candidates'],
-        'shortFilterUrl' => request()->fullUrlWithQuery([
-            'date' => $date,
-            'short' => $shortOnly ? null : 1,
-        ]),
-        'shortFilterActive' => $shortOnly,
-        'endingsFilterUrl' => request()->fullUrlWithQuery([
-            'date' => $date,
-            'endings' => $endingsOnly ? null : 1,
-        ]),
-        'endingsFilterActive' => $endingsOnly,
+        'pagination' => $data['pagination'],
+        'query' => $data['query'],
+        'date' => $date,
+        'shortOnly' => $shortOnly,
+        'endingsOnly' => $endingsOnly,
     ])
 
     <div class="grid gap-6 lg:grid-cols-2">

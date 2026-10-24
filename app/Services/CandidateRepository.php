@@ -50,6 +50,89 @@ class CandidateRepository
     }
 
     /**
+     * A page of candidates for a date, optionally narrowed by name keywords.
+     *
+     * @return array{candidates: array<int, array<string, mixed>>, total: int, page: int, per_page: int, pages: int}
+     */
+    public function pageForDate(
+        string $date,
+        string $term = '',
+        int $perPage = 25,
+        int $page = 1,
+        bool $shortOnly = false,
+        bool $exactOnly = false,
+    ): array {
+        $perPage = max(1, min(100, $perPage));
+        $page = max(1, $page);
+
+        $params = [
+            'd' => $date,
+            'from' => $date,
+            'tld' => 'com',
+            'event' => 'added',
+        ];
+
+        $where = 'c.event_date = {d:Date}'
+            .($shortOnly ? ' AND c.is_short = 1' : '')
+            .($exactOnly ? ' AND c.exact_tld_count >= 2' : '');
+
+        foreach ($this->searchTerms($term) as $index => $part) {
+            $where .= ' AND positionCaseInsensitive(c.name, {term'.$index.':String}) > 0';
+            $params['term'.$index] = $part;
+        }
+
+        $totalRows = $this->clickhouse->rows(
+            $this->visibleCandidatesSql('SELECT count() AS total', $where, ''),
+            $params,
+        );
+
+        $total = (int) ($totalRows[0]['total'] ?? 0);
+        $pages = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $pages);
+
+        $rows = $this->clickhouse->rows(
+            $this->visibleCandidatesSql(
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
+                $where,
+                'ORDER BY c.score DESC, c.name LIMIT {lim:UInt32} OFFSET {off:UInt32}',
+            ),
+            $params + ['lim' => $perPage, 'off' => ($page - 1) * $perPage],
+        );
+
+        return [
+            'candidates' => $this->decorate($rows),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => $pages,
+        ];
+    }
+
+    /**
+     * Split a keyword query into searchable name fragments. A full domain is
+     * reduced to its second level label so "acme.com" also matches "acme".
+     *
+     * @return array<int, string>
+     */
+    private function searchTerms(string $term): array
+    {
+        $terms = preg_split('/\s+/', strtolower(trim($term))) ?: [];
+
+        $terms = array_map(
+            fn (string $part) => str_contains($part, '.')
+                ? (string) preg_replace('/\.[^.]+$/', '', $part)
+                : $part,
+            $terms,
+        );
+
+        return array_slice(
+            array_values(array_filter($terms, fn (string $part) => $part !== '')),
+            0,
+            5,
+        );
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     public function forRange(string $from, string $to, int $limit = 1000): array

@@ -460,6 +460,60 @@ class PipelineTest extends TestCase
         $this->assertSame(1, $repository->countsForDate($today)['removed']);
     }
 
+    public function test_the_daily_candidate_page_can_be_searched_and_paginated(): void
+    {
+        $today = now()->format('Y-m-d');
+        $candidates = [];
+
+        for ($index = 0; $index < 30; $index++) {
+            $name = sprintf('pagetest%02d', $index);
+
+            $candidates[] = [
+                'event_date' => $today,
+                'name' => $name,
+                'weaker_found' => [$name.'.net'],
+                'weaker_types' => ['other_tld'],
+                'weaker_count' => 1,
+                'tld_count' => 1,
+                'exact_tld_count' => 1,
+                'is_short' => 0,
+                'score' => 100 - $index,
+            ];
+        }
+
+        $this->clickhouse->insertJsonEachRow(self::DATABASE.'.com_candidates', $candidates);
+
+        $repository = new CandidateRepository($this->clickhouse, self::DATABASE);
+
+        $first = $repository->pageForDate($today, '', 25, 1);
+
+        $this->assertSame(30, $first['total']);
+        $this->assertSame(2, $first['pages']);
+        $this->assertCount(25, $first['candidates']);
+        $this->assertSame('pagetest00', $first['candidates'][0]['name']);
+
+        $second = $repository->pageForDate($today, '', 25, 2);
+
+        $this->assertSame(2, $second['page']);
+        $this->assertCount(5, $second['candidates']);
+        $this->assertSame('pagetest25', $second['candidates'][0]['name']);
+
+        $outOfRange = $repository->pageForDate($today, '', 25, 99);
+
+        $this->assertSame(2, $outOfRange['page']);
+        $this->assertCount(5, $outOfRange['candidates']);
+
+        $domainSearch = $repository->pageForDate($today, 'pagetest29.com', 25, 1);
+
+        $this->assertSame(1, $domainSearch['total']);
+        $this->assertSame('pagetest29', $domainSearch['candidates'][0]['name']);
+
+        $keywordSearch = $repository->pageForDate($today, 'page 29', 25, 1);
+
+        $this->assertSame(1, $keywordSearch['total']);
+        $this->assertSame('pagetest29', $keywordSearch['candidates'][0]['name']);
+    }
+
     public function test_day_one_stores_the_baseline_without_a_diff_or_a_search(): void
     {
         $today = now()->format('Y-m-d');
