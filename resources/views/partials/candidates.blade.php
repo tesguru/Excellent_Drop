@@ -3,6 +3,8 @@
 
     $shortFilterUrl = $shortFilterUrl ?? null;
     $shortFilterActive = $shortFilterActive ?? false;
+    $endingsFilterUrl = $endingsFilterUrl ?? null;
+    $endingsFilterActive = $endingsFilterActive ?? false;
 
     $signalLabels = [
         'other_tld' => 'other TLD',
@@ -25,6 +27,14 @@
                    class="chip border transition {{ $shortFilterActive ? 'border-transparent text-[color:var(--accent-ink)]' : 'muted border-transparent hover:text-[color:var(--text)]' }}"
                    @if ($shortFilterActive) style="background: var(--accent)" @else style="background: rgb(var(--glow) / 0.1)" @endif>
                     {{ $shortFilterActive ? 'Show all' : 'Is short' }}
+                </a>
+            @endif
+
+            @if ($endingsFilterUrl !== null)
+                <a href="{{ $endingsFilterUrl }}"
+                   class="chip border transition {{ $endingsFilterActive ? 'border-transparent text-[color:var(--accent-ink)]' : 'muted border-transparent hover:text-[color:var(--text)]' }}"
+                   @if ($endingsFilterActive) style="background: var(--accent)" @else style="background: rgb(var(--glow) / 0.1)" @endif>
+                    {{ $endingsFilterActive ? 'Show all' : '2+ endings' }}
                 </a>
             @endif
 
@@ -59,6 +69,11 @@
                                         short
                                     </span>
                                 @endif
+                                @php $exactTldCount = (int) ($candidate['exact_tld_count'] ?? 0); @endphp
+                                <span class="chip muted" style="background: var(--surface-2)"
+                                      title="The exact name is registered on {{ $exactTldCount }} other TLD{{ $exactTldCount === 1 ? '' : 's' }}">
+                                    {{ $exactTldCount }} ending{{ $exactTldCount === 1 ? '' : 's' }}
+                                </span>
                             </div>
                             <p class="mt-1.5 text-xs muted">
                                 Removed {{ $candidate['event_date'] }}

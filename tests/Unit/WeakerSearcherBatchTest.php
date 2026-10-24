@@ -32,12 +32,14 @@ class WeakerSearcherBatchTest extends TestCase
             [['base' => 'acmeplumbing', 'tld' => 'org', 'name' => 'getacmeplumbing', 'ns' => '']],
             [['base' => 'acmeplumbing', 'tld' => 'io', 'name' => 'acmeplumbinghub', 'ns' => '']],
             [['base' => 'acmeplumbing', 'tld' => 'co', 'name' => 'acmeplumbings', 'ns' => '']],
+            [['base' => 'acmeplumbing', 'exact_tld_count' => 4, 'known_ns' => 2, 'ns_sets' => 2]],
         ];
 
         $results = (new WeakerSearcher($client, ['max_per_rule' => 50], 'zones_test'))
             ->findMany(['acmeplumbing', 'othername'], '2026-10-24', ['com', 'net', 'org', 'io', 'co']);
 
-        $this->assertCount(5, $client->queries);
+        // One query per rule plus one exact-TLD count query for the chunk.
+        $this->assertCount(6, $client->queries);
 
         foreach ($client->queries as $query) {
             $this->assertStringContainsString('acmeplumbing', $query);
@@ -63,6 +65,9 @@ class WeakerSearcherBatchTest extends TestCase
         $this->assertStringContainsString('plural', $signals['acmeplumbings.co']);
 
         $this->assertSame(['ns1.example'], $results['acmeplumbing']['nameservers']['acmeplumbing.net']);
+        $this->assertSame(4, $results['acmeplumbing']['exact_tld_count']);
+        $this->assertFalse($results['acmeplumbing']['same_nameservers']);
+        $this->assertSame(0, $results['othername']['exact_tld_count']);
         $this->assertSame([], $results['othername']['weaker_found']);
     }
 

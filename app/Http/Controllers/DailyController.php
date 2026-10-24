@@ -16,30 +16,37 @@ class DailyController extends Controller
     {
         $date = $this->date($request);
         $shortOnly = $request->boolean('short');
+        $endingsOnly = $request->boolean('endings');
 
         return view('daily', [
             'date' => $date,
             'shortOnly' => $shortOnly,
-            'data' => $this->dataFor($date, $shortOnly),
+            'endingsOnly' => $endingsOnly,
+            'data' => $this->dataFor($date, $shortOnly, $endingsOnly),
             'dates' => $this->candidates->candidateDates(60),
         ]);
     }
 
     public function data(Request $request): JsonResponse
     {
-        return response()->json($this->dataFor($this->date($request), $request->boolean('short')));
+        return response()->json($this->dataFor(
+            $this->date($request),
+            $request->boolean('short'),
+            $request->boolean('endings'),
+        ));
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function dataFor(string $date, bool $shortOnly = false): array
+    private function dataFor(string $date, bool $shortOnly = false, bool $endingsOnly = false): array
     {
         $counts = $this->candidates->countsForDate($date);
 
         return [
             'date' => $date,
             'short_only' => $shortOnly,
+            'endings_only' => $endingsOnly,
             'counts' => [
                 'removed' => $counts['removed'] ?? 0,
                 'added' => $counts['added'] ?? 0,
@@ -47,7 +54,7 @@ class DailyController extends Controller
             ],
             'removed_names' => $this->candidates->removedNames($date),
             'added_names' => $this->candidates->addedNames($date),
-            'candidates' => $this->candidates->forDate($date, 500, $shortOnly),
+            'candidates' => $this->candidates->forDate($date, 500, $shortOnly, $endingsOnly),
         ];
     }
 

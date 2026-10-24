@@ -24,16 +24,25 @@ class FakeCandidateRepository extends CandidateRepository
         parent::__construct(new ClickHouseClient(config('zones.clickhouse')), 'zones');
     }
 
-    public function forDate(string $date, int $limit = 500, bool $shortOnly = false): array
+    public function forDate(string $date, int $limit = 500, bool $shortOnly = false, bool $exactOnly = false): array
     {
-        if (! $shortOnly) {
-            return $this->candidates;
+        $candidates = $this->candidates;
+
+        if ($shortOnly) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                fn (array $candidate) => ! empty($candidate['is_short']),
+            ));
         }
 
-        return array_values(array_filter(
-            $this->candidates,
-            fn (array $candidate) => ! empty($candidate['is_short']),
-        ));
+        if ($exactOnly) {
+            $candidates = array_values(array_filter(
+                $candidates,
+                fn (array $candidate) => (int) ($candidate['exact_tld_count'] ?? 0) >= 2,
+            ));
+        }
+
+        return $candidates;
     }
 
     public function forRange(string $from, string $to, int $limit = 1000): array

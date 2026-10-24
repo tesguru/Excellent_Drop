@@ -23,4 +23,20 @@ class ScorerTest extends TestCase
 
         $this->assertGreaterThan($medium['score'], $short['score']);
     }
+
+    public function test_the_exact_tld_bonus_needs_two_tlds_and_independent_nameservers(): void
+    {
+        $scorer = app(Scorer::class);
+        $ownership = ['known' => false, 'independent' => false, 'same_owner' => false];
+
+        $one = $scorer->score('qzkvw', [], [], $ownership, 1);
+        $two = $scorer->score('qzkvw', [], [], $ownership, 2);
+        $twoSameOwner = $scorer->score('qzkvw', [], [], $ownership, 2, true);
+        $four = $scorer->score('qzkvw', [], [], $ownership, 4);
+
+        $this->assertSame(0.0, $one['breakdown']['exact_tld_count']);
+        $this->assertSame(24.0, $two['breakdown']['exact_tld_count']);
+        $this->assertSame(0.0, $twoSameOwner['breakdown']['exact_tld_count']);
+        $this->assertSame(48.0, $four['breakdown']['exact_tld_count']);
+    }
 }

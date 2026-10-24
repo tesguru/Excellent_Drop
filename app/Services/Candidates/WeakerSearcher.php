@@ -12,7 +12,8 @@ use App\Services\ClickHouse\ClickHouseClient;
  * plural of the name.
  *
  * Queries are batched: one query per rule for a whole chunk of removed names,
- * never one query per name.
+ * never one query per name. Every snapshot is searched, including .com; only
+ * the dropped domain itself is excluded.
  *
  * Misspellings and contains-in-the-middle are phase 2: the hooks exist but
  * stay disabled by default.
@@ -70,7 +71,9 @@ class WeakerSearcher
      *     weaker_found: array<int, string>,
      *     weaker_types: array<int, string>,
      *     details: array<string, array{domain:string, tld:string, name:string, signals:array<int,string>, added_chars:int, nameservers:array<int,string>}>,
-     *     nameservers: array<string, array<int, string>>
+     *     nameservers: array<string, array<int, string>>,
+     *     exact_tld_count: int,
+     *     same_nameservers: bool
      * }>
      */
     public function findMany(array $names, string $snapshotDate, array $tlds): array
@@ -182,7 +185,7 @@ class WeakerSearcher
             );
         }
 
-        return $this->assemble($names, $details);
+        return $this->assemble($names, $details, $this->exactTldStats($names, $snapshotDate));
     }
 
     /**
@@ -193,7 +196,9 @@ class WeakerSearcher
      *     weaker_found: array<int, string>,
      *     weaker_types: array<int, string>,
      *     details: array<string, array{domain:string, tld:string, name:string, signals:array<int,string>, added_chars:int, nameservers:array<int,string>}>,
-     *     nameservers: array<string, array<int, string>>
+     *     nameservers: array<string, array<int, string>>,
+     *     exact_tld_count: int,
+     *     same_nameservers: bool
      * }
      */
     public function find(string $name, string $snapshotDate, array $tlds): array
@@ -206,19 +211,23 @@ class WeakerSearcher
     /**
      * @param  array<string, array<string, array{domain:string, tld:string, name:string, signals:array<int,string>, added_chars:int, nameservers:array<int,string>}>>  $details
      * @param  array<int, string>  $names
+     * @param  array<string, array{count:int, same_nameservers:bool}>  $exactStats
      * @return array<string, array{
      *     weaker_found: array<int, string>,
      *     weaker_types: array<int, string>,
      *     details: array<string, array{domain:string, tld:string, name:string, signals:array<int,string>, added_chars:int, nameservers:array<int,string>}>,
-     *     nameservers: array<string, array<int, string>>
+     *     nameservers: array<string, array<int, string>>,
+     *     exact_tld_count: int,
+     *     same_nameservers: bool
      * }>
      */
-    private function assemble(array $names, array $details): array
+    private function assemble(array $names, array $details, array $exactStats): array
     {
         $results = [];
 
         foreach ($names as $name) {
             $found = $details[$name] ?? [];
+            $exact = $exactStats[$name] ?? ['count' => 0, 'same_nameservers' => false];
 
             if (strlen($name) <= self::SHORT_NAME_MAX_LENGTH) {
                 // The unrestricted rules are kept first, then the closest
@@ -250,6 +259,8 @@ class WeakerSearcher
                 'weaker_types' => $weakerTypes,
                 'details' => $found,
                 'nameservers' => $nameservers,
+                'exact_tld_count' => $exact['count'],
+                'same_nameservers' => $exact['same_nameservers'],
             ];
         }
 
@@ -257,7 +268,7 @@ class WeakerSearcher
     }
 
     /**
-     * @return array{weaker_found: array<int, string>, weaker_types: array<int, string>, details: array<string, array<string, mixed>>, nameservers: array<string, array<int, string>>}
+     * @return array{weaker_found: array<int, string>, weaker_types: array<int, string>, details: array<string, array<string, mixed>>, nameservers: array<string, array<int, string>>, exact_tld_count: int, same_nameservers: bool}
      */
     private function emptyResult(): array
     {
@@ -266,6 +277,8 @@ class WeakerSearcher
             'weaker_types' => [],
             'details' => [],
             'nameservers' => [],
+            'exact_tld_count' => 0,
+            'same_nameservers' => false,
         ];
     }
 
@@ -440,22 +453,67 @@ class WeakerSearcher
     }
 
     /**
+     * Count the other TLDs that carry the exact same name, and whether every
+     * domain with nameserver data points at one set (a single owner).
+     *
+     * @param  array<int, string>  $names
+     * @return array<string, array{count:int, same_nameservers:bool}>
+     */
+    private function exactTldStats(array $names, string $snapshotDate): array
+    {
+        $sql = sprintf(
+            'SELECT name AS base, uniqExact(tld) AS exact_tld_count, '
+            ."countIf(ns != '') AS known_ns, uniqExactIf(ns, ns != '') AS ns_sets "
+            .'FROM %s.zone_names '
+            .'WHERE snapshot_date = %s AND tld != \'com\' AND name IN %s '
+            .'GROUP BY name',
+            $this->database,
+            $this->sqlString($snapshotDate),
+            $this->sqlArray($names),
+        );
+
+        $stats = [];
+
+        foreach ($this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS) as $row) {
+            $base = strtolower((string) ($row['base'] ?? ''));
+
+            if ($base === '') {
+                continue;
+            }
+
+            $known = (int) ($row['known_ns'] ?? 0);
+            $sets = (int) ($row['ns_sets'] ?? 0);
+
+            $stats[$base] = [
+                'count' => (int) ($row['exact_tld_count'] ?? 0),
+                'same_nameservers' => $known >= 2 && $sets === 1,
+            ];
+        }
+
+        return $stats;
+    }
+
+    /**
      * @param  array<int, string>  $names
      * @param  array<int, string>  $tlds
      * @return array<int, array<string, mixed>>
      */
     private function queryOtherTld(array $names, string $snapshotDate, array $tlds, int $limit): array
     {
+        // Every snapshot is searched, including .com. The dropped domain
+        // itself is the only exact .com match and must not count.
         $sql = sprintf(
             'SELECT base, tld, name, ns FROM ('
-            .'SELECT z.name AS base, z.tld AS tld, z.name AS name, z.ns AS ns '
+            .'SELECT r.name AS base, z.tld AS tld, z.name AS name, z.ns AS ns '
             .'FROM %s.zone_names AS z '
-            .'WHERE z.snapshot_date = %s AND z.tld IN %s AND z.name IN %s AND z.tld != \'com\''
+            .'INNER JOIN (SELECT arrayJoin(%s) AS name) AS r ON z.name = r.name '
+            .'WHERE z.snapshot_date = %s AND z.tld IN %s '
+            .'AND NOT (z.tld = \'com\' AND z.name = r.name)'
             .') ORDER BY base, tld LIMIT %d BY base',
             $this->database,
+            $this->sqlArray($names),
             $this->sqlString($snapshotDate),
             $this->sqlArray($tlds),
-            $this->sqlArray($names),
             $limit,
         );
 

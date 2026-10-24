@@ -19,14 +19,18 @@ Blade, vanilla JavaScript and a Vite/Tailwind build.
 3. Loads the names into ClickHouse as a daily snapshot.
 4. Diffs the snapshot against the previous day to get the removed and the added
    names.
-5. Searches the other zones for weaker versions of every removed `.com` name:
-   the same name on another TLD, the same name with a hyphen, a name that
-   starts with it, a name that ends with it and the plural of it. Names of four
-   characters or fewer use a restricted rule set: prefix and suffix matches may
-   only add one or two characters and at most 20 weaker versions are kept, so a
-   short name cannot flood the candidate list.
-6. Scores every candidate from the weaker versions and the nameserver data in
-   the zone snapshots. It never performs RDAP or website lookups.
+5. Searches every TLD snapshot, including `.com`, for weaker versions of every
+   removed `.com` name: the same name on another TLD, the same name with a
+   hyphen, a name that starts with it, a name that ends with it and the plural
+   of it. The dropped domain itself is excluded. Names of four characters or
+   fewer use a restricted rule set: prefix and suffix matches may only add one
+   or two characters and at most 20 weaker versions are kept, so a short name
+   cannot flood the candidate list.
+6. Scores every candidate from the weaker versions, how many other TLDs carry
+   the exact same name (`exact_tld_count`) and the nameserver data in the zone
+   snapshots. The exact-name bonus needs two or more TLDs and is suppressed
+   when every domain shares the same nameservers. It never performs RDAP or
+   website lookups.
 7. Cleans up old snapshots and raw files.
 
 ## Network policy
@@ -136,9 +140,10 @@ retry window has to stay above the longest step. Run exactly one zones worker
 The candidate step streams only the `.com` names removed today in chunks of
 5,000. Each chunk is filtered against today's `.com` snapshot so a restored
 name is skipped, and the weaker-version search runs one batched ClickHouse
-query per rule for the whole chunk. Candidates are inserted in batches of
-1,000, progress and chunk duration are written to `job_runs`, and a rerun
-replaces only today's rows.
+query per rule for the whole chunk. One extra query per chunk counts the other
+TLDs that carry the exact same name (`exact_tld_count`). Candidates are
+inserted in batches of 1,000, progress and chunk duration are written to
+`job_runs`, and a rerun replaces only today's rows.
 
 The queue workers are supervisor programs, see
 `deploy/supervisor/dropwatch-worker.conf`.
@@ -152,6 +157,9 @@ The queue workers are supervisor programs, see
 * `com_candidates.weaker_types` is a parallel array: the signals of the
   version at the same position, joined with commas (`other_tld`, `hyphen`,
   `starts_with`, `ends_with`, `plural`).
+* `com_candidates.exact_tld_count` is the number of other TLDs that carry the
+  exact same name. The candidates list shows it as `N endings` and has a
+  `2+ endings` filter.
 * A name that left the zone is in redemption for about 30 days and in pending
   delete for about 5 days. The estimated drop date is the removal date plus
   those days. It is an estimate, never a statement that the name is available.
@@ -162,9 +170,10 @@ The queue workers are supervisor programs, see
 ## Optional files
 
 * `storage/app/brand_terms.txt` - one brand per line. A name in this list is
-  always flagged for a manual brand review.
-* `storage/app/dictionary.txt` - one word per line. A single dictionary word
-  of four characters or more is flagged as a possible brand as well.
+  always flagged for a manual brand review. This is the only brand-risk
+  signal; a dictionary word is not flagged just for being a word.
+* `storage/app/dictionary.txt` - one word per line. It is used only for name
+  quality (single word versus word pair).
 
 ## Troubleshooting
 

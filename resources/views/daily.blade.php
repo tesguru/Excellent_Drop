@@ -37,6 +37,11 @@
             'short' => $shortOnly ? null : 1,
         ]),
         'shortFilterActive' => $shortOnly,
+        'endingsFilterUrl' => request()->fullUrlWithQuery([
+            'date' => $date,
+            'endings' => $endingsOnly ? null : 1,
+        ]),
+        'endingsFilterActive' => $endingsOnly,
     ])
 
     <div class="grid gap-6 lg:grid-cols-2">

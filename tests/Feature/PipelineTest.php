@@ -95,12 +95,13 @@ class PipelineTest extends TestCase
         $this->buildCandidates();
 
         $candidates = $this->clickhouse->rows(
-            'SELECT name, weaker_found, weaker_types, weaker_count, tld_count, is_short, score FROM '.self::DATABASE.'.com_candidates ORDER BY name',
+            'SELECT name, weaker_found, weaker_types, weaker_count, tld_count, exact_tld_count, is_short, score FROM '.self::DATABASE.'.com_candidates ORDER BY name',
         );
 
         $this->assertCount(1, $candidates);
         $this->assertSame('acmeplumbing', $candidates[0]['name']);
         $this->assertSame(0, (int) $candidates[0]['is_short']);
+        $this->assertSame(1, (int) $candidates[0]['exact_tld_count']);
         $this->assertContains('acme-plumbing.net', $candidates[0]['weaker_found']);
         $this->assertContains('acmeplumbing.net', $candidates[0]['weaker_found']);
         $this->assertContains('getacmeplumbing.net', $candidates[0]['weaker_found']);
@@ -118,6 +119,56 @@ class PipelineTest extends TestCase
         $this->assertStringContainsString('ends_with', $signals['getacmeplumbing.net']);
 
         $this->assertGreaterThan(0, (float) $candidates[0]['score']);
+    }
+
+    public function test_exact_tld_count_covers_every_other_tld_and_the_filter_uses_it(): void
+    {
+        $today = now()->format('Y-m-d');
+        $yesterday = now()->subDay()->format('Y-m-d');
+
+        $loader = new ZoneLoader($this->clickhouse, self::DATABASE);
+
+        $loader->load('com', $this->namesFile(['acmeplumbing', 'goneone']), $yesterday);
+        $loader->load('com', $this->namesFile(['acme-plumbing', 'getacmeplumbing', 'newname']), $today);
+        $loader->load('net', $this->namesFile(['acmeplumbing', 'acme-plumbing', 'goneone']), $today);
+        $loader->load('org', $this->namesFile(['acmeplumbing']), $today);
+        $loader->load('io', $this->namesFile(['acmeplumbing', 'getacmeplumbing']), $today);
+
+        (new ZoneDiffer($this->clickhouse, self::DATABASE))->diff('com', $today, $yesterday);
+
+        $this->buildCandidates();
+
+        $candidate = $this->clickhouse->row(
+            'SELECT name, weaker_found, exact_tld_count, score FROM '.self::DATABASE.'.com_candidates WHERE name = {n:String}',
+            ['n' => 'acmeplumbing'],
+        );
+
+        $this->assertNotNull($candidate);
+
+        // net, org and io carry the exact name; .com does not count.
+        $this->assertSame(3, (int) $candidate['exact_tld_count']);
+
+        // The search includes .com variants, but not the dropped domain.
+        $this->assertContains('acme-plumbing.com', $candidate['weaker_found']);
+        $this->assertContains('getacmeplumbing.com', $candidate['weaker_found']);
+        $this->assertNotContains('acmeplumbing.com', $candidate['weaker_found']);
+
+        $other = $this->clickhouse->row(
+            'SELECT name, exact_tld_count FROM '.self::DATABASE.'.com_candidates WHERE name = {n:String}',
+            ['n' => 'goneone'],
+        );
+
+        $this->assertNotNull($other);
+        $this->assertSame(1, (int) $other['exact_tld_count']);
+
+        $repository = new CandidateRepository($this->clickhouse, self::DATABASE);
+
+        $this->assertCount(2, $repository->forDate($today));
+
+        $filtered = $repository->forDate($today, 500, false, true);
+
+        $this->assertCount(1, $filtered);
+        $this->assertSame('acmeplumbing', $filtered[0]['name']);
     }
 
     public function test_a_three_letter_name_does_not_flood_the_candidate_with_matches(): void
@@ -261,6 +312,7 @@ class PipelineTest extends TestCase
             'weaker_types' => ['other_tld'],
             'weaker_count' => 1,
             'tld_count' => 1,
+            'exact_tld_count' => 1,
             'is_short' => 0,
             'score' => 10.0,
         ]]);
@@ -355,6 +407,7 @@ class PipelineTest extends TestCase
                 'weaker_types' => ['other_tld'],
                 'weaker_count' => 1,
                 'tld_count' => 1,
+                'exact_tld_count' => 1,
                 'is_short' => 0,
                 'score' => 20.0,
             ],
@@ -365,6 +418,7 @@ class PipelineTest extends TestCase
                 'weaker_types' => ['other_tld'],
                 'weaker_count' => 1,
                 'tld_count' => 1,
+                'exact_tld_count' => 1,
                 'is_short' => 0,
                 'score' => 10.0,
             ],

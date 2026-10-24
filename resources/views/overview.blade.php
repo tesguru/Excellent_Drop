@@ -31,6 +31,8 @@
                 'candidates' => $data['top_candidates'],
                 'shortFilterUrl' => request()->fullUrlWithQuery(['short' => $data['short_only'] ? null : 1]),
                 'shortFilterActive' => $data['short_only'],
+                'endingsFilterUrl' => request()->fullUrlWithQuery(['endings' => $data['endings_only'] ? null : 1]),
+                'endingsFilterActive' => $data['endings_only'],
             ])
         </div>
 

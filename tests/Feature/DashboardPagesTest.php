@@ -27,6 +27,7 @@ class DashboardPagesTest extends TestCase
                     'weaker_types' => ['hyphen', 'other_tld'],
                     'weaker_count' => 2,
                     'tld_count' => 1,
+                    'exact_tld_count' => 3,
                     'is_short' => false,
                     'score' => 91.5,
                     'estimated_drop_date' => now()->addDays(35)->format('Y-m-d'),
@@ -40,6 +41,7 @@ class DashboardPagesTest extends TestCase
                     'weaker_types' => ['other_tld'],
                     'weaker_count' => 1,
                     'tld_count' => 1,
+                    'exact_tld_count' => 1,
                     'is_short' => true,
                     'score' => 72.0,
                     'estimated_drop_date' => now()->addDays(35)->format('Y-m-d'),
@@ -101,6 +103,33 @@ class DashboardPagesTest extends TestCase
         $this->getJson('/api/overview?short=1')
             ->assertOk()
             ->assertJsonPath('short_only', true);
+    }
+
+    public function test_the_endings_badge_and_filter_are_available(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('2+ endings')
+            ->assertSee('3 endings')
+            ->assertSee('1 ending');
+
+        $this->get('/?endings=1')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com')
+            ->assertDontSee('oak.com');
+
+        $this->get('/daily?endings=1')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com')
+            ->assertDontSee('oak.com');
+
+        $this->getJson('/api/daily?endings=1')
+            ->assertOk()
+            ->assertJsonPath('endings_only', true);
+
+        $this->getJson('/api/overview?endings=1')
+            ->assertOk()
+            ->assertJsonPath('endings_only', true);
     }
 
     public function test_the_search_page_shows_the_results(): void

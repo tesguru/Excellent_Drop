@@ -52,8 +52,7 @@ class AppServiceProvider extends ServiceProvider
             [storage_path('app/dictionary.txt')],
         ));
 
-        $this->app->singleton(BrandRiskDetector::class, fn ($app) => new BrandRiskDetector(
-            $app->make(Dictionary::class),
+        $this->app->singleton(BrandRiskDetector::class, fn () => new BrandRiskDetector(
             storage_path('app/brand_terms.txt'),
         ));
 

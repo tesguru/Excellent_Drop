@@ -19,7 +19,7 @@ class Scorer
     public const WEIGHTS = [
         'weaker_count' => 6.0,
         'closeness' => -2.0,
-        'tld_count' => 12.0,
+        'exact_tld_count' => 12.0,
         'independent_owners' => 18.0,
         'same_owner' => -15.0,
         'single_word' => 18.0,
@@ -48,14 +48,15 @@ class Scorer
      * @param  array<int, string>  $weakerFound  full domains
      * @param  array<int, string>  $weakerTypes  signal per weaker version, parallel to $weakerFound
      * @param  array{independent:bool, same_owner:bool, known:bool}  $ownership
-     * @return array{score:float, breakdown:array<string, float>, brand_risk:bool, tld_count:int}
+     * @return array{score:float, breakdown:array<string, float>, brand_risk:bool, exact_tld_count:int}
      */
     public function score(
         string $name,
         array $weakerFound,
         array $weakerTypes,
         array $ownership,
-        int $tldCount,
+        int $exactTldCount = 0,
+        bool $sameNameservers = false,
     ): array {
         $breakdown = [];
 
@@ -65,7 +66,12 @@ class Scorer
         $addedChars = $this->averageAddedChars($weakerFound, $weakerTypes);
         $breakdown['closeness'] = min($addedChars, self::MAX_COUNTED_ADDED_CHARS) * self::WEIGHTS['closeness'];
 
-        $breakdown['tld_count'] = min($tldCount, self::MAX_COUNTED_TLDS) * self::WEIGHTS['tld_count'];
+        // Strategy 2 bonus: the exact name lives on two or more other TLDs.
+        // One owner across all of them is one registration strategy, not
+        // independent demand, so it earns nothing.
+        $breakdown['exact_tld_count'] = $exactTldCount >= 2 && ! $sameNameservers
+            ? min($exactTldCount, self::MAX_COUNTED_TLDS) * self::WEIGHTS['exact_tld_count']
+            : 0.0;
 
         if ($ownership['known'] ?? false) {
             $breakdown['independent_owners'] = ($ownership['independent'] ?? false)
@@ -107,7 +113,7 @@ class Scorer
             'score' => round($score, 2),
             'breakdown' => $breakdown,
             'brand_risk' => $brandRisk,
-            'tld_count' => $tldCount,
+            'exact_tld_count' => $exactTldCount,
         ];
     }
 

@@ -23,11 +23,13 @@ class CandidateRepository
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function forDate(string $date, int $limit = 500, bool $shortOnly = false): array
+    public function forDate(string $date, int $limit = 500, bool $shortOnly = false, bool $exactOnly = false): array
     {
         $sql = $this->visibleCandidatesSql(
-            'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.is_short, c.score',
-            'c.event_date = {d:Date}'.($shortOnly ? ' AND c.is_short = 1' : ''),
+            'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
+            'c.event_date = {d:Date}'
+            .($shortOnly ? ' AND c.is_short = 1' : '')
+            .($exactOnly ? ' AND c.exact_tld_count >= 2' : ''),
             'ORDER BY c.score DESC, c.name LIMIT {lim:UInt32}',
         );
 
@@ -49,7 +51,7 @@ class CandidateRepository
     {
         $rows = $this->clickhouse->rows(
             $this->visibleCandidatesSql(
-                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.is_short, c.score',
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
                 'c.event_date >= {from:Date} AND c.event_date <= {to:Date}',
                 'ORDER BY c.event_date DESC, c.score DESC, c.name LIMIT {lim:UInt32}',
             ),
@@ -86,7 +88,7 @@ class CandidateRepository
 
         $rows = $this->clickhouse->rows(
             $this->visibleCandidatesSql(
-                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.is_short, c.score',
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
                 'c.event_date >= {from:Date} '
                 .'AND (c.name = {exact:String} OR positionCaseInsensitive(c.name, {partial:String}) > 0)',
                 'ORDER BY c.event_date DESC, c.score DESC, c.name LIMIT {lim:UInt32}',
@@ -300,6 +302,7 @@ class CandidateRepository
             $rows[$index]['weaker_found'] = array_values((array) ($row['weaker_found'] ?? []));
             $rows[$index]['weaker_types'] = array_values((array) ($row['weaker_types'] ?? []));
             $rows[$index]['is_short'] = (bool) ($row['is_short'] ?? false);
+            $rows[$index]['exact_tld_count'] = (int) ($row['exact_tld_count'] ?? 0);
             $rows[$index]['estimated_drop_date'] = $eventDate === ''
                 ? null
                 : Carbon::parse($eventDate)->addDays($graceDays)->format('Y-m-d');

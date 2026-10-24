@@ -2,40 +2,23 @@
 
 namespace App\Services\Candidates;
 
-use App\Services\Text\Dictionary;
-
 /**
- * Heuristic brand risk detector.
+ * Flags the names in the curated brand list for manual review.
  *
- * There is no trademark database available to the app, so a name is flagged
- * for manual brand review when it is a single dictionary word (the shape a
- * trademark is most likely to take) or when it appears in the optional
- * curated list at storage/app/brand_terms.txt.
+ * There is no trademark database available to the app, and a dictionary
+ * heuristic flags every single word, so only storage/app/brand_terms.txt is
+ * used.
  */
 class BrandRiskDetector
 {
     /** @var array<string, true>|null */
     private ?array $curated = null;
 
-    public function __construct(
-        private readonly Dictionary $dictionary,
-        private readonly string $curatedPath,
-    ) {}
+    public function __construct(private readonly string $curatedPath) {}
 
     public function isAtRisk(string $name): bool
     {
-        $name = strtolower($name);
-
-        if (isset($this->curated()[$name])) {
-            return true;
-        }
-
-        if (preg_match('/\d/', $name) === 1) {
-            return false;
-        }
-
-        // A single dictionary word is the most likely trademark shape.
-        return $this->dictionary->isWord($name) && strlen($name) >= 4;
+        return isset($this->curated()[strtolower(trim($name))]);
     }
 
     /**

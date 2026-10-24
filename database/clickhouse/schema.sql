@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS zones.com_candidates
     `weaker_types` Array(String),
     `weaker_count` UInt32,
     `tld_count` UInt8,
+    `exact_tld_count` UInt16 DEFAULT 0,
     `is_short` UInt8 DEFAULT 0,
     `score` Float32
 )
@@ -49,3 +50,4 @@ ORDER BY (event_date, score);
 -- Existing installations need the column added explicitly: CREATE TABLE IF
 -- NOT EXISTS does not modify a table that already exists.
 ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `is_short` UInt8 DEFAULT 0;
+ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `exact_tld_count` UInt16 DEFAULT 0;

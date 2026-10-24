@@ -282,12 +282,15 @@ class BuildComCandidates implements ShouldQueue
             $result['weaker_found'],
         )));
 
+        $exactTldCount = (int) ($result['exact_tld_count'] ?? 0);
+
         $scored = $scorer->score(
             $name,
             $result['weaker_found'],
             $result['weaker_types'],
             $ownershipResult,
-            $tldCount,
+            $exactTldCount,
+            (bool) ($result['same_nameservers'] ?? false),
         );
 
         return [
@@ -297,6 +300,7 @@ class BuildComCandidates implements ShouldQueue
             'weaker_types' => array_values($result['weaker_types']),
             'weaker_count' => count($result['weaker_found']),
             'tld_count' => min($tldCount, 255),
+            'exact_tld_count' => min($exactTldCount, 65535),
             'is_short' => strlen($name) <= WeakerSearcher::SHORT_NAME_MAX_LENGTH ? 1 : 0,
             'score' => $scored['score'],
         ];

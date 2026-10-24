@@ -17,18 +17,24 @@ class OverviewController extends Controller
 
     public function index(Request $request): View
     {
-        return view('overview', ['data' => $this->payload($request->boolean('short'))]);
+        return view('overview', ['data' => $this->payload(
+            $request->boolean('short'),
+            $request->boolean('endings'),
+        )]);
     }
 
     public function data(Request $request): JsonResponse
     {
-        return response()->json($this->payload($request->boolean('short')));
+        return response()->json($this->payload(
+            $request->boolean('short'),
+            $request->boolean('endings'),
+        ));
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function payload(bool $shortOnly = false): array
+    private function payload(bool $shortOnly = false, bool $endingsOnly = false): array
     {
         $today = now()->format('Y-m-d');
         $counts = $this->candidates->countsForDate($today);
@@ -72,6 +78,7 @@ class OverviewController extends Controller
             'generated_at' => now()->toIso8601String(),
             'date' => $today,
             'short_only' => $shortOnly,
+            'endings_only' => $endingsOnly,
             'counts' => [
                 'removed' => $counts['removed'] ?? 0,
                 'added' => $counts['added'] ?? 0,
@@ -96,7 +103,7 @@ class OverviewController extends Controller
                 'warning_days' => $warningDays,
                 'expiring' => $expiring,
             ],
-            'top_candidates' => $this->candidates->forDate($today, 10, $shortOnly),
+            'top_candidates' => $this->candidates->forDate($today, 10, $shortOnly, $endingsOnly),
             'snapshot_dates' => $this->candidates->candidateDates(30),
         ];
     }
