@@ -66,7 +66,7 @@
                             <li class="rounded-lg px-2 py-1 font-mono text-xs"
                                 style="background: rgb(244 63 94 / 0.12); color: rgb(251 113 133)">
                                 {{ $name }}.com
-                                @include('partials.lookup-link', ['domain' => $name.'.com'])
+                                @include('partials.rdap-action', ['domain' => $name.'.com'])
                             </li>
                         @endforeach
                     </ul>
@@ -88,7 +88,7 @@
                             <li class="rounded-lg px-2 py-1 font-mono text-xs"
                                 style="background: rgb(16 185 129 / 0.13); color: rgb(52 211 153)">
                                 {{ $name }}.com
-                                @include('partials.lookup-link', ['domain' => $name.'.com'])
+                                @include('partials.rdap-action', ['domain' => $name.'.com'])
                             </li>
                         @endforeach
                     </ul>

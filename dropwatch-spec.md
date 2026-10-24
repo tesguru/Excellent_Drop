@@ -14,11 +14,14 @@ DropWatch makes exactly two kinds of HTTP requests:
    talking to the configured ClickHouse host, including the HTTP interface
    used for small queries.
 
-No other outbound HTTP is allowed. There is no RDAP client, IANA bootstrap
-request, website checker or live DNS lookup. RDAP links in the dashboard are
-rendered from `LOOKUP_LINK_TEMPLATE` for a human to open in a new tab; the
-application never requests them. `tests/Unit/NetworkPolicyTest.php` fails if
-an HTTP call appears outside the two allowed clients.
+No other outbound HTTP is allowed. There is no server-side RDAP client, IANA
+bootstrap request, website checker or live DNS lookup. The dashboard renders
+RDAP URLs from `LOOKUP_LINK_TEMPLATE_COM` (`.com`) and
+`LOOKUP_LINK_TEMPLATE` (other TLDs). When the user clicks "Check status", the
+browser queries the registry directly: the request never passes through the
+DropWatch server and the server stores only the status the user chooses to
+save. `tests/Unit/NetworkPolicyTest.php` fails if a server-side HTTP call
+appears outside the two allowed clients.
 
 ## Storage
 
@@ -88,9 +91,16 @@ A removed name that is present again in today's `.com` snapshot is restored
 and is not searched. A candidate is hidden again if an `added` event for the
 same `.com` name appears after the removal.
 
-Every candidate and every weaker domain renders an RDAP link built locally
-from `LOOKUP_LINK_TEMPLATE` (default `https://rdap.org/domain/{domain}`).
-Links open in a new tab with `rel="noopener noreferrer"`.
+Every candidate and every weaker domain renders a "Check status" action and a
+small "View raw" link. The raw URL is built locally from
+`LOOKUP_LINK_TEMPLATE_COM` for `.com` (default
+`https://rdap.verisign.com/com/v1/domain/{domain}`) or `LOOKUP_LINK_TEMPLATE`
+for other TLDs (default `https://rdap.org/domain/{domain}`). Links open in a
+new tab with `rel="noopener noreferrer"`. The status check runs in the browser:
+the server never fetches RDAP. Results are cached in `localStorage` for 24
+hours, up to 20 names can be checked in one run, and those checks are
+sequential at one request per second. A saved status of `on_hold` or
+`renewed` hides the candidate from the Daily and Overview lists.
 
 ## Scoring
 

@@ -38,9 +38,17 @@
                 </a>
             @endif
 
+            <span data-rdap-selection-count class="text-xs muted">0 selected</span>
+
+            <button type="button" data-rdap-check-selected class="btn btn-ghost px-2.5 py-1 text-xs" disabled>
+                Check selected
+            </button>
+
             <span class="chip muted" style="background: var(--surface-2)">{{ count($candidates) }}</span>
         </div>
     </div>
+
+    <p data-rdap-selection-message class="px-4 pt-2 text-xs muted"></p>
 
     @if (count($candidates) === 0)
         <p class="px-4 py-10 text-center text-sm muted">
@@ -53,34 +61,40 @@
                      onmouseover="this.style.background='rgb(var(--glow) / 0.03)'"
                      onmouseout="this.style.background='transparent'">
                     <div class="flex flex-wrap items-start justify-between gap-3">
-                        <div class="min-w-0">
-                            <div class="flex flex-wrap items-center gap-2">
-                                <a href="{{ url('/search?q=' . urlencode($candidate['name'])) }}"
-                                   class="font-mono text-sm font-semibold hover:underline" style="color: var(--text)">
-                                    {{ $candidate['domain'] }}
-                                </a>
-                                @include('partials.lookup-link', ['domain' => $candidate['domain']])
-                                <span class="chip bg-gradient-to-br from-sky-400 to-cyan-500 font-bold text-[color:var(--accent-ink)]">
-                                    {{ number_format((float) $candidate['score'], 1) }}
-                                </span>
-                                @if (! empty($candidate['is_short']))
-                                    <span class="chip" style="background: rgb(var(--glow) / 0.14); color: var(--accent)"
-                                          title="Name has {{ \App\Services\Candidates\WeakerSearcher::SHORT_NAME_MAX_LENGTH }} or fewer characters">
-                                        short
+                        <div class="flex min-w-0 items-start gap-2.5">
+                            <input type="checkbox" data-rdap-select value="{{ $candidate['domain'] }}"
+                                   aria-label="Select {{ $candidate['domain'] }} for a status check"
+                                   class="mt-1 h-3.5 w-3.5 shrink-0 cursor-pointer accent-sky-500">
+
+                            <div class="min-w-0">
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <a href="{{ url('/search?q=' . urlencode($candidate['name'])) }}"
+                                       class="font-mono text-sm font-semibold hover:underline" style="color: var(--text)">
+                                        {{ $candidate['domain'] }}
+                                    </a>
+                                    @include('partials.rdap-action', ['domain' => $candidate['domain']])
+                                    <span class="chip bg-gradient-to-br from-sky-400 to-cyan-500 font-bold text-[color:var(--accent-ink)]">
+                                        {{ number_format((float) $candidate['score'], 1) }}
                                     </span>
-                                @endif
-                                @php $exactTldCount = (int) ($candidate['exact_tld_count'] ?? 0); @endphp
-                                <span class="chip muted" style="background: var(--surface-2)"
-                                      title="The exact name is registered on {{ $exactTldCount }} other TLD{{ $exactTldCount === 1 ? '' : 's' }}">
-                                    {{ $exactTldCount }} ending{{ $exactTldCount === 1 ? '' : 's' }}
-                                </span>
+                                    @if (! empty($candidate['is_short']))
+                                        <span class="chip" style="background: rgb(var(--glow) / 0.14); color: var(--accent)"
+                                              title="Name has {{ \App\Services\Candidates\WeakerSearcher::SHORT_NAME_MAX_LENGTH }} or fewer characters">
+                                            short
+                                        </span>
+                                    @endif
+                                    @php $exactTldCount = (int) ($candidate['exact_tld_count'] ?? 0); @endphp
+                                    <span class="chip muted" style="background: var(--surface-2)"
+                                          title="The exact name is registered on {{ $exactTldCount }} other TLD{{ $exactTldCount === 1 ? '' : 's' }}">
+                                        {{ $exactTldCount }} ending{{ $exactTldCount === 1 ? '' : 's' }}
+                                    </span>
+                                </div>
+                                <p class="mt-1.5 text-xs muted">
+                                    Removed {{ $candidate['event_date'] }}
+                                    @if (! empty($candidate['estimated_drop_date']))
+                                        &middot; estimated drop {{ $candidate['estimated_drop_date'] }}
+                                    @endif
+                                </p>
                             </div>
-                            <p class="mt-1.5 text-xs muted">
-                                Removed {{ $candidate['event_date'] }}
-                                @if (! empty($candidate['estimated_drop_date']))
-                                    &middot; estimated drop {{ $candidate['estimated_drop_date'] }}
-                                @endif
-                            </p>
                         </div>
 
                         <div class="flex items-center gap-2">
@@ -101,7 +115,7 @@
                                 <li class="rounded-lg border px-2.5 py-1 font-mono text-xs"
                                     style="border-color: var(--border); background: var(--surface-2)">
                                     {{ $domain }}
-                                    @include('partials.lookup-link', ['domain' => $domain])
+                                    @include('partials.rdap-action', ['domain' => $domain])
                                     @php
                                         $signals = array_filter(explode(',', (string) ($candidate['weaker_types'][$index] ?? '')));
                                     @endphp

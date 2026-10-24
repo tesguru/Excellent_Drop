@@ -1,8 +1,11 @@
 @php
     $lookupUrl = \App\Support\LookupLink::for($domain);
+    $lookupSource = \App\Support\LookupLink::source($domain);
 @endphp
 
 <div class="relative overflow-hidden rounded-2xl border p-4"
+     data-rdap data-rdap-mode="panel"
+     data-domain="{{ $domain }}" data-url="{{ $lookupUrl }}" data-source="{{ $lookupSource }}"
      style="border-color: rgb(var(--glow) / 0.35); background: linear-gradient(135deg, rgb(var(--glow) / 0.14), rgb(var(--glow) / 0.02) 55%, transparent)">
     <div class="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full opacity-40 blur-2xl"
          style="background: radial-gradient(circle, rgb(var(--glow) / 0.8), transparent 70%)"></div>
@@ -17,19 +20,23 @@
             </span>
 
             <div class="min-w-0">
-                <p class="label">RDAP check</p>
+                <p class="label">RDAP status</p>
                 <p class="mt-1 text-sm font-semibold">
-                    Verify the registry record for <span class="font-mono">{{ $domain }}</span>
+                    Check the registry record for <span class="font-mono">{{ $domain }}</span>
                 </p>
                 <p class="mt-1 text-xs muted">
-                    Inspect the current holder, status and expiry in the public RDAP service.
+                    The check runs in your browser. DropWatch's server never contacts RDAP.
                 </p>
             </div>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
-            <a href="{{ $lookupUrl }}" target="_blank" rel="noopener noreferrer" class="btn btn-primary">
-                Open RDAP
+            <button type="button" data-rdap-check class="btn btn-primary">
+                Check status
+            </button>
+
+            <a href="{{ $lookupUrl }}" target="_blank" rel="noopener noreferrer" class="btn btn-ghost">
+                View raw
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M14 5h5v5m0-5-8 8M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" />
                 </svg>
@@ -42,5 +49,9 @@
                 <span data-copy-label>Copy</span>
             </button>
         </div>
+    </div>
+
+    <div class="relative mt-4">
+        @include('partials.rdap-result')
     </div>
 </div>

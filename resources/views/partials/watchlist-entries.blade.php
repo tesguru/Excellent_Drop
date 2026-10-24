@@ -160,15 +160,7 @@
                                 {{ $variationCount }} {{ Str::plural('variation', $variationCount) }}
                             </button>
 
-                            <a href="{{ \App\Support\LookupLink::for($entry['domain']) }}"
-                               target="_blank" rel="noopener noreferrer"
-                               title="Look up {{ $entry['domain'] }} in RDAP"
-                               class="chip border border-[color:var(--border)] muted transition hover:text-[color:var(--text)]">
-                                RDAP
-                                <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M14 5h5v5m0-5-8 8M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" />
-                                </svg>
-                            </a>
+                            @include('partials.rdap-action', ['domain' => $entry['domain']])
                         </div>
                     </div>
 
@@ -257,15 +249,7 @@
                                                     @endif
                                                 </div>
 
-                                                <a href="{{ \App\Support\LookupLink::for($variation) }}"
-                                                   target="_blank" rel="noopener noreferrer"
-                                                   title="Look up {{ $variation }} in RDAP"
-                                                   class="chip border border-[color:var(--border)] muted transition hover:text-[color:var(--text)]">
-                                                    RDAP
-                                                    <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M14 5h5v5m0-5-8 8M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" />
-                                                    </svg>
-                                                </a>
+                                                @include('partials.rdap-action', ['domain' => $variation])
                                             </li>
                                         @endforeach
                                     </ul>

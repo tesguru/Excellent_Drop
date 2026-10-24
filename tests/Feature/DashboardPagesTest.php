@@ -91,8 +91,10 @@ class DashboardPagesTest extends TestCase
             ->assertSee('acmeplumbing.com')
             ->assertSee('acme-plumbing.net')
             ->assertSee('estimated drop')
+            ->assertSee('Check status')
+            ->assertSee('View raw')
             ->assertSee('rel="noopener noreferrer"', false)
-            ->assertSee('https://rdap.org/domain/acmeplumbing.com', false)
+            ->assertSee('https://rdap.verisign.com/com/v1/domain/acmeplumbing.com', false)
             ->assertSee('https://rdap.org/domain/acme-plumbing.net', false);
     }
 
@@ -109,8 +111,9 @@ class DashboardPagesTest extends TestCase
             ->assertSee('<dialog', false)
             ->assertSee('Weaker variations')
             ->assertSee('acme-plumbing.net')
-            ->assertSee('RDAP check')
-            ->assertSee('Open RDAP')
+            ->assertSee('RDAP status')
+            ->assertSee('Check status')
+            ->assertSee('View raw')
             ->assertSee('Track this name')
             ->assertSee('2 variations');
     }

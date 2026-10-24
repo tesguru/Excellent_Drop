@@ -42,9 +42,11 @@ DropWatch makes exactly two kinds of HTTP calls:
 2. The ClickHouse client (`app/Services/ClickHouse/ClickHouseClient.php`)
    talking to the configured ClickHouse host.
 
-Everything else is local. RDAP links in the dashboard are rendered for a human
-to open; the application never fetches them, and there is no site checker, DNS
-lookup or IANA bootstrap request.
+Everything else is local. RDAP links and the "Check status" action are
+rendered for the browser: when a user clicks the button the browser queries
+the registry directly, and the DropWatch server never sees or makes that
+request. There is no server-side RDAP client, site checker, DNS lookup or IANA
+bootstrap request.
 
 ## Requirements
 

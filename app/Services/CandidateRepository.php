@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\RdapStatus;
 use App\Models\Watchlist;
 use App\Services\ClickHouse\ClickHouseClient;
 use Illuminate\Support\Carbon;
@@ -19,6 +20,9 @@ class CandidateRepository
      * Candidates are history and are kept after their snapshots are pruned.
      */
     private const SEARCH_LOOKBACK_DAYS = 45;
+
+    /** @var array<int, string>|null */
+    private ?array $hiddenNames = null;
 
     public function __construct(
         private readonly ClickHouseClient $clickhouse,
@@ -43,6 +47,7 @@ class CandidateRepository
             'from' => $date,
             'tld' => 'com',
             'event' => 'added',
+            'hidden' => $this->hiddenNames(),
             'lim' => $limit,
         ]);
 
@@ -70,6 +75,7 @@ class CandidateRepository
             'from' => $date,
             'tld' => 'com',
             'event' => 'added',
+            'hidden' => $this->hiddenNames(),
         ];
 
         $where = 'c.event_date = {d:Date}'
@@ -143,7 +149,7 @@ class CandidateRepository
                 'c.event_date >= {from:Date} AND c.event_date <= {to:Date}',
                 'ORDER BY c.event_date DESC, c.score DESC, c.name LIMIT {lim:UInt32}',
             ),
-            ['from' => $from, 'to' => $to, 'tld' => 'com', 'event' => 'added', 'lim' => $limit],
+            ['from' => $from, 'to' => $to, 'tld' => 'com', 'event' => 'added', 'hidden' => $this->hiddenNames(), 'lim' => $limit],
         );
 
         return $this->decorate($rows);
@@ -187,6 +193,7 @@ class CandidateRepository
                 'partial' => $term,
                 'tld' => 'com',
                 'event' => 'added',
+                'hidden' => $this->hiddenNames(),
                 'lim' => $limit,
             ],
         );
@@ -290,7 +297,7 @@ class CandidateRepository
                 'c.event_date = {d:Date}',
                 '',
             ),
-            ['d' => $date, 'from' => $date, 'tld' => 'com', 'event' => 'added'],
+            ['d' => $date, 'from' => $date, 'tld' => 'com', 'event' => 'added', 'hidden' => $this->hiddenNames()],
         );
 
         $counts['candidates'] = (int) ($candidateRows[0]['total'] ?? 0);
@@ -344,8 +351,9 @@ class CandidateRepository
     }
 
     /**
-     * A candidate disappears once the same .com name is added again. The
-     * join runs in ClickHouse so the limit still applies to visible rows.
+     * A candidate disappears once the same .com name is added again, or when
+     * its saved RDAP status says it is on hold or already renewed. The join
+     * runs in ClickHouse so the limit still applies to visible rows.
      */
     private function visibleCandidatesSql(string $select, string $where, string $tail): string
     {
@@ -358,8 +366,22 @@ class CandidateRepository
             .') AS restored ON restored.name = c.name '
             .'WHERE '.$where
             .' AND (restored.added_on IS NULL OR restored.added_on < c.event_date) '
+            .'AND c.name NOT IN {hidden:Array(String)} '
             .$tail
             .' SETTINGS join_use_nulls = 1';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function hiddenNames(): array
+    {
+        if ($this->hiddenNames === null) {
+            $names = RdapStatus::hiddenNames();
+            $this->hiddenNames = $names === [] ? ['__dropwatch_no_hidden_names__'] : $names;
+        }
+
+        return $this->hiddenNames;
     }
 
     /**

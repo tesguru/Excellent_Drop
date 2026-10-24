@@ -55,6 +55,12 @@
                    @if ($endingsOnly) style="background: var(--accent)" @else style="background: rgb(var(--glow) / 0.1)" @endif>
                     {{ $endingsOnly ? 'Show all' : '2+ endings' }}
                 </a>
+
+                <span data-rdap-selection-count class="text-xs muted">0 selected</span>
+
+                <button type="button" data-rdap-check-selected class="btn btn-ghost px-2.5 py-1 text-xs" disabled>
+                    Check selected
+                </button>
             </div>
         </div>
 
@@ -85,6 +91,8 @@
                 </a>
             @endif
         </form>
+
+        <p data-rdap-selection-message class="mt-2 text-xs muted"></p>
     </div>
 
     @if (count($candidates) === 0)
@@ -123,6 +131,10 @@
                 <div class="flex flex-wrap items-center gap-3 px-4 py-3 transition"
                      onmouseover="this.style.background='rgb(var(--glow) / 0.03)'"
                      onmouseout="this.style.background='transparent'">
+                    <input type="checkbox" data-rdap-select value="{{ $candidate['domain'] }}"
+                           aria-label="Select {{ $candidate['domain'] }} for a status check"
+                           class="h-3.5 w-3.5 shrink-0 cursor-pointer accent-sky-500">
+
                     <button type="button" data-modal-open="{{ $modalId }}" aria-haspopup="dialog"
                             class="group w-full min-w-0 text-left sm:w-auto sm:flex-1">
                         <span class="flex items-center gap-2">
@@ -176,15 +188,7 @@
                             {{ $watching ? 'Watching' : 'Watch' }}
                         </button>
 
-                        <a href="{{ \App\Support\LookupLink::for($candidate['domain']) }}"
-                           target="_blank" rel="noopener noreferrer"
-                           title="Look up {{ $candidate['domain'] }} in RDAP"
-                           class="chip border border-[color:var(--border)] muted transition hover:text-[color:var(--text)]">
-                            RDAP
-                            <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" d="M14 5h5v5m0-5-8 8M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" />
-                            </svg>
-                        </a>
+                        @include('partials.rdap-action', ['domain' => $candidate['domain']])
                     </div>
                 </div>
             @endforeach
@@ -312,15 +316,7 @@
                                         @endif
                                     </div>
 
-                                    <a href="{{ \App\Support\LookupLink::for($variation) }}"
-                                       target="_blank" rel="noopener noreferrer"
-                                       title="Look up {{ $variation }} in RDAP"
-                                       class="chip border border-[color:var(--border)] muted transition hover:text-[color:var(--text)]">
-                                        RDAP
-                                        <svg class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" d="M14 5h5v5m0-5-8 8M19 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4" />
-                                        </svg>
-                                    </a>
+                                    @include('partials.rdap-action', ['domain' => $variation])
                                 </li>
                             @endforeach
                         </ul>

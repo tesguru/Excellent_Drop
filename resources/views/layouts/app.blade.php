@@ -140,6 +140,8 @@
     </div>
 </div>
 
+@include('partials.rdap-dialog')
+
 @stack('scripts')
 </body>
 </html>

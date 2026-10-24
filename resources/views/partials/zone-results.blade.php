@@ -42,7 +42,7 @@
                            class="font-mono text-sm font-semibold hover:underline" style="color: var(--text)">
                             {{ $result['domain'] }}
                         </a>
-                        @include('partials.lookup-link', ['domain' => $result['domain']])
+                        @include('partials.rdap-action', ['domain' => $result['domain']])
 
                         @if ($result['removed_on'] !== null)
                             <span class="chip" style="background: rgb(244 63 94 / 0.12); color: rgb(251 113 133)">

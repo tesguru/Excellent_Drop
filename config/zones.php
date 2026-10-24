@@ -91,12 +91,15 @@ return [
     | External domain lookup
     |--------------------------------------------------------------------------
     |
-    | DropWatch never fetches RDAP itself. These links are rendered for a
-    | human to open in a new tab; {domain} is replaced with the encoded name.
+    | The DropWatch server never fetches RDAP. The dashboard renders these
+    | URLs and the browser may query them when the user asks for a status
+    | check. .com names use the registry endpoint, everything else uses the
+    | bootstrap service. {domain} is replaced with the encoded name.
     |
     */
 
     'lookup_link_template' => env('LOOKUP_LINK_TEMPLATE', 'https://rdap.org/domain/{domain}'),
+    'lookup_link_template_com' => env('LOOKUP_LINK_TEMPLATE_COM', 'https://rdap.verisign.com/com/v1/domain/{domain}'),
 
     /*
     |--------------------------------------------------------------------------

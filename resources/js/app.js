@@ -1,5 +1,9 @@
+import { initRdap } from './rdap.js';
+
 (function () {
     'use strict';
+
+    initRdap();
 
     const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
 

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DailyController;
+use App\Http\Controllers\DomainStatusController;
 use App\Http\Controllers\JobsController;
 use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\SearchController;
@@ -32,6 +33,8 @@ Route::middleware('auth')->group(function (): void {
     Route::put('/watchlist/{domain}', [WatchlistController::class, 'update'])->name('watchlist.update');
     Route::delete('/watchlist/{domain}', [WatchlistController::class, 'destroy'])->name('watchlist.destroy');
     Route::post('/watchlist/{domain}/notes', [WatchlistController::class, 'storeNote'])->name('watchlist.notes');
+
+    Route::post('/domain-status', [DomainStatusController::class, 'store'])->name('domain-status.store');
 
     Route::get('/zones', [ZonesController::class, 'index'])->name('zones');
 
