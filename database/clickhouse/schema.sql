@@ -14,11 +14,19 @@ CREATE TABLE IF NOT EXISTS zones.zone_names
     `name` String,
     `name_rev` String,
     `ns` String DEFAULT '',
-    INDEX name_ngram name TYPE ngrambf_v1(3, 65536, 2, 0) GRANULARITY 4
+    INDEX name_ngram name TYPE ngrambf_v1(3, 65536, 2, 0) GRANULARITY 4,
+    -- Suffix searches use the reversed name. Ordering a copy by
+    -- (tld, name_rev) turns them into a primary-key range.
+    PROJECTION name_rev_order (SELECT * ORDER BY (tld, name_rev))
 )
 ENGINE = MergeTree
 PARTITION BY snapshot_date
 ORDER BY (tld, name);
+
+-- Existing installations need the projection added explicitly; CREATE TABLE
+-- IF NOT EXISTS does not modify an existing table. `zones:ch-migrate`
+-- materializes it for parts that were written before the projection existed.
+ALTER TABLE zones.zone_names ADD PROJECTION IF NOT EXISTS name_rev_order (SELECT * ORDER BY (tld, name_rev));
 
 -- Permanent log of names appearing in / disappearing from a zone.
 CREATE TABLE IF NOT EXISTS zones.zone_events

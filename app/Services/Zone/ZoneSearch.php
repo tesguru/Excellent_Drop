@@ -163,12 +163,20 @@ class ZoneSearch
         $params['limit'] = self::PER_PAGE + 1;
         $params['offset'] = ($page - 1) * self::PER_PAGE;
 
+        $settings = 'max_execution_time = '.self::TIMEOUT_SECONDS;
+
+        if ($mode === 'ends') {
+            // Suffix searches must use the name_rev_order projection; fail
+            // loudly if it is missing instead of scanning every snapshot row.
+            $settings .= ', force_optimize_projection = 1';
+        }
+
         $sql = sprintf(
             'SELECT tld, name FROM %s.zone_names WHERE %s ORDER BY name, tld '
-            .'LIMIT {limit:UInt32} OFFSET {offset:UInt32} SETTINGS max_execution_time = %d',
+            .'LIMIT {limit:UInt32} OFFSET {offset:UInt32} SETTINGS %s',
             $this->database,
             implode(' AND ', $conditions),
-            self::TIMEOUT_SECONDS,
+            $settings,
         );
 
         try {

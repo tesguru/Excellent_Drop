@@ -246,6 +246,25 @@ class ZoneSearchTest extends TestCase
         $this->assertFalse($capped['has_more']);
     }
 
+    public function test_ends_with_uses_the_name_rev_projection(): void
+    {
+        $this->loadZones([
+            'com' => ['acmeplumbing', 'getacmeplumbing', 'oak'],
+            'net' => ['acmeplumbing'],
+        ], now()->format('Y-m-d'));
+
+        $plan = $this->explain(
+            'SELECT tld, name FROM '.self::DATABASE.'.zone_names '
+            .'WHERE snapshot_date = {d:Date} AND startsWith(name_rev, {rev:String}) '
+            .'ORDER BY name, tld LIMIT 101 OFFSET 0 '
+            .'SETTINGS max_execution_time = 20, force_optimize_projection = 1',
+            ['d' => now()->format('Y-m-d'), 'rev' => strrev('plumbing')],
+        );
+
+        $this->assertStringContainsString('name_rev_order', $plan);
+        $this->assertStringContainsString('ReadFrom', $plan);
+    }
+
     /**
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
@@ -271,6 +290,22 @@ class ZoneSearchTest extends TestCase
     private function domains(array $result): array
     {
         return array_map(fn (array $row) => $row['domain'], $result['results']);
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     */
+    private function explain(string $sql, array $params = []): string
+    {
+        $rows = $this->clickhouse->rows('EXPLAIN indexes = 1 '.$sql, $params);
+
+        $lines = [];
+
+        foreach ($rows as $row) {
+            $lines[] = implode(' ', array_map(fn ($value) => (string) $value, array_values($row)));
+        }
+
+        return implode("\n", $lines);
     }
 
     /**

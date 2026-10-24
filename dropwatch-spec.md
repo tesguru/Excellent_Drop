@@ -29,7 +29,10 @@ ClickHouse (database `zones` by default) holds:
 
 * `zone_names` — one row per second-level name per TLD and snapshot date,
   with `name_rev` for suffix searches and `ns` with the nameservers
-  aggregated from the zone file.
+  aggregated from the zone file. A `name_rev_order` projection ordered by
+  `(tld, name_rev)` makes suffix searches a primary-key range;
+  `zones:ch-migrate` adds the projection and materializes it once for parts
+  written before it existed.
 * `zone_events` — `added` and `removed` events produced by the diff.
 * `com_candidates` — one row per removed `.com` name with a weaker version.
 
@@ -125,7 +128,9 @@ minimum and maximum length, hide digits and hide hyphens filters.
 Every value is passed to ClickHouse as a query parameter and no statement uses
 `LIKE`, so `%` and `_` are always literal characters. Contains uses
 `positionCaseInsensitive`, Starts with uses `startsWith`, Exact uses equality
-and Ends with uses `startsWith` on the reversed `name_rev` column.
+and Ends with uses `startsWith` on the reversed `name_rev` column. Ends with
+forces the `name_rev_order` projection, so a missing projection fails loudly
+instead of silently falling back to a full scan.
 
 Contains requires at least three characters. The query runs with a 20 second
 timeout and reports “too broad” instead of hanging. Results are limited to 100
@@ -151,5 +156,7 @@ limited. ClickHouse uses a dedicated user restricted to the `zones` database.
 
 Unit and feature tests run without ClickHouse. Tests that need ClickHouse
 state it explicitly and are executed on the VPS against a separate
-`zones_test` database, never the real `zones` database. Performance changes
-to suffix searches are verified with `EXPLAIN` output.
+`zones_test` database, never the real `zones` database. The suffix-search test
+asserts with `EXPLAIN indexes = 1` that ClickHouse reads the `name_rev_order`
+projection, so a schema or query change that loses the projection fails the
+suite.

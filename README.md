@@ -63,7 +63,8 @@ php artisan key:generate
 # Create the Postgres database, then:
 php artisan migrate --force
 
-# Create the ClickHouse tables (zone_names, zone_events, com_candidates):
+# Create the ClickHouse tables (zone_names, zone_events, com_candidates)
+# and materialize the reversed-name projection when needed:
 php artisan zones:ch-migrate
 
 # Create the single dashboard user:
@@ -83,7 +84,7 @@ Fill in `CZDS_USERNAME` and `CZDS_PASSWORD` in `.env` before the first run.
 
 | Table | Purpose |
 | --- | --- |
-| `zone_names` | One row per name per zone per snapshot date, with a reversed name column and an ngram index for prefix and suffix lookups |
+| `zone_names` | One row per name per zone per snapshot date, with a reversed name column, an ngram index for prefix lookups and a `name_rev_order` projection for suffix lookups |
 | `zone_events` | One row per name that was added or removed on a date |
 | `com_candidates` | One row per removed `.com` name that has weaker versions, with the versions, their signals and the score |
 
@@ -123,6 +124,11 @@ Contains needs at least three characters. A query is stopped after 20 seconds
 and reported as "too broad", results are capped at 100 per page and 5,000 in
 total, and typing debounces for 400ms. Each result shows whether the name was
 removed or added in the last 45 days.
+
+Ends with searches force the `name_rev_order` projection (ordered by
+`(tld, name_rev)`), so ClickHouse reads the reversed-name order instead of
+scanning every row. `zones:ch-migrate` adds the projection and materializes it
+once for snapshots that were loaded before it existed.
 
 ## Scheduling
 
@@ -196,3 +202,4 @@ The queue workers are supervisor programs, see
 | `Extraction for {tld} produced no names` | The zone file layout changed. Run `php artisan zones:step extract --tld=com` and inspect the file. |
 | The worker light is red | The queue worker is not running or the scheduler is not running. Check supervisor and the cron entry. |
 | `clickhouse-client failed` | The binary is not on the PATH of the PHP process. Set `CLICKHOUSE_CLIENT_BIN` to the full path. |
+| Ends with returns “Projection ... not used” | Run `php artisan zones:ch-migrate`; it adds and materializes the `name_rev_order` projection. |
