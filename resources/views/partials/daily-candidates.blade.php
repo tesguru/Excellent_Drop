@@ -7,6 +7,10 @@
     $shortOnly = $shortOnly ?? false;
     $endingsOnly = $endingsOnly ?? false;
     $date = $date ?? '';
+    $minVariations = $minVariations ?? null;
+    $maxVariations = $maxVariations ?? null;
+    $exactVariations = $exactVariations ?? null;
+    $hasVariationFilter = $minVariations !== null || $maxVariations !== null || $exactVariations !== null;
 
     $page = (int) ($pagination['page'] ?? 1);
     $pages = max(1, (int) ($pagination['pages'] ?? 1));
@@ -39,6 +43,20 @@
                 @if ($query !== '')
                     <span class="chip" style="background: rgb(var(--glow) / 0.14); color: var(--accent)">
                         &ldquo;{{ $query }}&rdquo;
+                    </span>
+                @endif
+
+                @if ($hasVariationFilter)
+                    <span class="chip muted" style="background: var(--surface-2)">
+                        @if ($exactVariations !== null)
+                            exactly {{ number_format($exactVariations) }} {{ Str::plural('variation', $exactVariations) }}
+                        @elseif ($minVariations !== null && $maxVariations !== null)
+                            {{ number_format($minVariations) }}&ndash;{{ number_format($maxVariations) }} variations
+                        @elseif ($minVariations !== null)
+                            {{ number_format($minVariations) }}+ {{ Str::plural('variation', $minVariations) }}
+                        @else
+                            up to {{ number_format($maxVariations) }} {{ Str::plural('variation', $maxVariations) }}
+                        @endif
                     </span>
                 @endif
             </div>
@@ -83,10 +101,25 @@
                        placeholder="Search candidates by keyword..." class="field pl-9">
             </div>
 
+            <div class="flex flex-wrap items-center gap-1.5">
+                <span class="text-xs muted">Variations</span>
+                <input id="daily-min-variations" name="min_variations" type="number" min="0" step="1"
+                       value="{{ $minVariations }}" placeholder="min" aria-label="Minimum variations"
+                       class="field w-[4.5rem] px-2 py-1.5 text-xs">
+                <input id="daily-exact-variations" name="exact_variations" type="number" min="0" step="1"
+                       value="{{ $exactVariations }}" placeholder="exact" aria-label="Exact variations"
+                       title="Exact count overrides min and max"
+                       class="field w-[4.5rem] px-2 py-1.5 text-xs">
+                <input id="daily-max-variations" name="max_variations" type="number" min="0" step="1"
+                       value="{{ $maxVariations }}" placeholder="max" aria-label="Maximum variations"
+                       class="field w-[4.5rem] px-2 py-1.5 text-xs">
+            </div>
+
             <button type="submit" class="btn btn-primary">Search</button>
 
-            @if ($query !== '')
-                <a href="{{ request()->fullUrlWithQuery(['q' => null, 'page' => null]) }}" class="btn btn-ghost">
+            @if ($query !== '' || $hasVariationFilter)
+                <a href="{{ request()->fullUrlWithQuery(['q' => null, 'min_variations' => null, 'max_variations' => null, 'exact_variations' => null, 'page' => null]) }}"
+                   class="btn btn-ghost">
                     Clear
                 </a>
             @endif
@@ -112,8 +145,8 @@
                 @endif
             </p>
 
-            @if ($query !== '' || $shortOnly || $endingsOnly)
-                <a href="{{ request()->fullUrlWithQuery(['q' => null, 'short' => null, 'endings' => null, 'page' => null]) }}"
+            @if ($query !== '' || $shortOnly || $endingsOnly || $hasVariationFilter)
+                <a href="{{ request()->fullUrlWithQuery(['q' => null, 'short' => null, 'endings' => null, 'min_variations' => null, 'max_variations' => null, 'exact_variations' => null, 'page' => null]) }}"
                    class="btn btn-ghost mt-4 text-xs">
                     Reset filters
                 </a>
@@ -201,7 +234,9 @@
                 of <span class="font-semibold tabular-nums" style="color: var(--text)">{{ number_format($total) }}</span>
             </p>
 
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+                @include('partials.page-mover', ['page' => $page, 'pages' => $pages])
+
                 @if ($page > 1)
                     <a href="{{ request()->fullUrlWithQuery(['page' => $page - 1]) }}"
                        class="btn btn-ghost px-3 py-1.5 text-xs">Previous</a>

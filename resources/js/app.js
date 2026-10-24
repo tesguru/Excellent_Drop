@@ -301,18 +301,20 @@ import { initRdap } from './rdap.js';
     document.querySelectorAll('[data-watch-entry]').forEach(function (entry) {
         const domain = entry.getAttribute('data-domain');
 
-        entry.querySelector('.watch-remove')?.addEventListener('click', async function () {
-            if (!window.confirm('Remove ' + domain + ' from the watchlist?')) {
-                return;
-            }
+        entry.querySelectorAll('.watch-remove').forEach(function (button) {
+            button.addEventListener('click', async function () {
+                if (!window.confirm('Remove ' + domain + ' from the watchlist?')) {
+                    return;
+                }
 
-            try {
-                await request('DELETE', '/watchlist/' + encodeURIComponent(domain));
-                say('Removed ' + domain + '.', false);
-                window.setTimeout(function () { window.location.reload(); }, 300);
-            } catch (error) {
-                window.alert(error.message);
-            }
+                try {
+                    await request('DELETE', '/watchlist/' + encodeURIComponent(domain));
+                    say('Removed ' + domain + '.', false);
+                    window.setTimeout(function () { window.location.reload(); }, 300);
+                } catch (error) {
+                    window.alert(error.message);
+                }
+            });
         });
 
         entry.querySelector('.watch-status')?.addEventListener('change', async function (event) {

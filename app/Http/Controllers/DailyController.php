@@ -25,7 +25,16 @@ class DailyController extends Controller
             'date' => $date,
             'shortOnly' => $shortOnly,
             'endingsOnly' => $endingsOnly,
-            'data' => $this->dataFor($date, $shortOnly, $endingsOnly, $term, $this->page($request)),
+            'data' => $this->dataFor(
+                $date,
+                $shortOnly,
+                $endingsOnly,
+                $term,
+                $this->page($request),
+                $this->variation($request, 'min_variations'),
+                $this->variation($request, 'max_variations'),
+                $this->variation($request, 'exact_variations'),
+            ),
             'dates' => $this->candidates->candidateDates(60),
         ]);
     }
@@ -38,14 +47,25 @@ class DailyController extends Controller
             $request->boolean('endings'),
             $this->term($request),
             $this->page($request),
+            $this->variation($request, 'min_variations'),
+            $this->variation($request, 'max_variations'),
+            $this->variation($request, 'exact_variations'),
         ));
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function dataFor(string $date, bool $shortOnly, bool $endingsOnly, string $term, int $page): array
-    {
+    private function dataFor(
+        string $date,
+        bool $shortOnly,
+        bool $endingsOnly,
+        string $term,
+        int $page,
+        ?int $minVariations = null,
+        ?int $maxVariations = null,
+        ?int $exactVariations = null,
+    ): array {
         $counts = $this->candidates->countsForDate($date);
 
         $result = $this->candidates->pageForDate(
@@ -55,6 +75,9 @@ class DailyController extends Controller
             $page,
             $shortOnly,
             $endingsOnly,
+            $minVariations,
+            $maxVariations,
+            $exactVariations,
         );
 
         return [
@@ -62,6 +85,9 @@ class DailyController extends Controller
             'short_only' => $shortOnly,
             'endings_only' => $endingsOnly,
             'query' => $term,
+            'min_variations' => $minVariations,
+            'max_variations' => $maxVariations,
+            'exact_variations' => $exactVariations,
             'counts' => [
                 'removed' => $counts['removed'] ?? 0,
                 'added' => $counts['added'] ?? 0,
@@ -92,6 +118,19 @@ class DailyController extends Controller
         $page = $request->query('page', 1);
 
         return max(1, is_scalar($page) ? (int) $page : 1);
+    }
+
+    private function variation(Request $request, string $key): ?int
+    {
+        $value = $request->query($key);
+
+        if (! is_scalar($value)) {
+            return null;
+        }
+
+        $number = filter_var($value, FILTER_VALIDATE_INT);
+
+        return $number === false ? null : max(0, $number);
     }
 
     private function date(Request $request): string

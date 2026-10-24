@@ -66,6 +66,9 @@ class CandidateRepository
         int $page = 1,
         bool $shortOnly = false,
         bool $exactOnly = false,
+        ?int $minVariations = null,
+        ?int $maxVariations = null,
+        ?int $exactVariations = null,
     ): array {
         $perPage = max(1, min(100, $perPage));
         $page = max(1, $page);
@@ -81,6 +84,21 @@ class CandidateRepository
         $where = 'c.event_date = {d:Date}'
             .($shortOnly ? ' AND c.is_short = 1' : '')
             .($exactOnly ? ' AND c.exact_tld_count >= 2' : '');
+
+        if ($exactVariations !== null) {
+            $where .= ' AND c.weaker_count = {exactv:UInt32}';
+            $params['exactv'] = $exactVariations;
+        } else {
+            if ($minVariations !== null) {
+                $where .= ' AND c.weaker_count >= {minv:UInt32}';
+                $params['minv'] = $minVariations;
+            }
+
+            if ($maxVariations !== null) {
+                $where .= ' AND c.weaker_count <= {maxv:UInt32}';
+                $params['maxv'] = $maxVariations;
+            }
+        }
 
         foreach ($this->searchTerms($term) as $index => $part) {
             $where .= ' AND positionCaseInsensitive(c.name, {term'.$index.':String}) > 0';

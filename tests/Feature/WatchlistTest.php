@@ -91,6 +91,7 @@ class WatchlistTest extends TestCase
             ->assertSee('Owner asked about the price.')
             ->assertSee('Add a note')
             ->assertSee('Remove from watchlist')
+            ->assertSee('aria-label="Remove acmeplumbing.com from the watchlist"', false)
             ->assertSee('2 variations');
 
         $this->getJson('/api/watchlist')
@@ -145,7 +146,13 @@ class WatchlistTest extends TestCase
             ->assertSee('watched25.com')
             ->assertDontSee('watched00.com')
             ->assertSee('Page 2 of 2')
-            ->assertSee('26&ndash;30', false);
+            ->assertSee('26&ndash;30', false)
+            ->assertSee('data-page-mover', false)
+            ->assertSee('aria-label="Go to page"', false);
+
+        $this->get('/watchlist?q=watched&page=2')
+            ->assertOk()
+            ->assertSee('name="q" value="watched"', false);
 
         $this->getJson('/api/watchlist?page=99')
             ->assertOk()

@@ -165,7 +165,13 @@ class DashboardPagesTest extends TestCase
             ->assertSee('candidate25.com')
             ->assertSee('Page 2 of 2')
             ->assertSee('26&ndash;30', false)
+            ->assertSee('data-page-mover', false)
+            ->assertSee('aria-label="Go to page"', false)
             ->assertDontSee('candidate0.com');
+
+        $this->get('/daily?q=candidate&page=2')
+            ->assertOk()
+            ->assertSee('name="q" value="candidate"', false);
 
         $this->getJson('/api/daily?page=2')
             ->assertOk()
@@ -230,6 +236,41 @@ class DashboardPagesTest extends TestCase
         $this->getJson('/api/overview?endings=1')
             ->assertOk()
             ->assertJsonPath('endings_only', true);
+    }
+
+    public function test_daily_candidates_can_be_filtered_by_variation_count(): void
+    {
+        $this->get('/daily?min_variations=2')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com')
+            ->assertDontSee('oak.com');
+
+        $this->get('/daily?max_variations=1')
+            ->assertOk()
+            ->assertSee('oak.com')
+            ->assertDontSee('acmeplumbing.com');
+
+        $this->get('/daily?exact_variations=2')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com')
+            ->assertDontSee('oak.com');
+
+        $this->get('/daily?exact_variations=1&min_variations=2')
+            ->assertOk()
+            ->assertSee('oak.com')
+            ->assertDontSee('acmeplumbing.com');
+
+        $this->getJson('/api/daily?min_variations=2')
+            ->assertOk()
+            ->assertJsonPath('min_variations', 2)
+            ->assertJsonCount(1, 'candidates')
+            ->assertJsonPath('candidates.0.domain', 'acmeplumbing.com');
+
+        $this->getJson('/api/daily?exact_variations=1')
+            ->assertOk()
+            ->assertJsonPath('exact_variations', 1)
+            ->assertJsonCount(1, 'candidates')
+            ->assertJsonPath('candidates.0.domain', 'oak.com');
     }
 
     public function test_the_search_page_shows_the_results(): void

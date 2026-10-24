@@ -22,6 +22,12 @@
             <input type="hidden" name="endings" value="1">
         @endif
 
+        @foreach (['min_variations', 'max_variations', 'exact_variations'] as $variationFilter)
+            @if ($data[$variationFilter] !== null)
+                <input type="hidden" name="{{ $variationFilter }}" value="{{ $data[$variationFilter] }}">
+            @endif
+        @endforeach
+
         @if (count($dates) > 0)
             <div>
                 <label for="dates" class="label">Days with data</label>
@@ -49,6 +55,9 @@
         'date' => $date,
         'shortOnly' => $shortOnly,
         'endingsOnly' => $endingsOnly,
+        'minVariations' => $data['min_variations'],
+        'maxVariations' => $data['max_variations'],
+        'exactVariations' => $data['exact_variations'],
     ])
 
     <div class="grid gap-6 lg:grid-cols-2">

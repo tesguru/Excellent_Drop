@@ -52,6 +52,9 @@ class FakeCandidateRepository extends CandidateRepository
         int $page = 1,
         bool $shortOnly = false,
         bool $exactOnly = false,
+        ?int $minVariations = null,
+        ?int $maxVariations = null,
+        ?int $exactVariations = null,
     ): array {
         $candidates = $this->candidates;
 
@@ -62,6 +65,8 @@ class FakeCandidateRepository extends CandidateRepository
         if ($exactOnly) {
             $candidates = $this->filter($candidates, fn (array $candidate) => (int) ($candidate['exact_tld_count'] ?? 0) >= 2);
         }
+
+        $candidates = $this->filterVariations($candidates, $minVariations, $maxVariations, $exactVariations);
 
         $terms = array_values(array_filter(preg_split('/\s+/', strtolower(trim($term))) ?: []));
 
@@ -107,6 +112,37 @@ class FakeCandidateRepository extends CandidateRepository
     private function filter(array $candidates, callable $callback): array
     {
         return array_values(array_filter($candidates, $callback));
+    }
+
+    /**
+     * An exact count wins over the min and max bounds, matching the query.
+     *
+     * @param  array<int, array<string, mixed>>  $candidates
+     * @return array<int, array<string, mixed>>
+     */
+    private function filterVariations(array $candidates, ?int $min, ?int $max, ?int $exact): array
+    {
+        if ($exact !== null) {
+            return $this->filter($candidates, fn (array $candidate) => $this->variationCount($candidate) === $exact);
+        }
+
+        if ($min !== null) {
+            $candidates = $this->filter($candidates, fn (array $candidate) => $this->variationCount($candidate) >= $min);
+        }
+
+        if ($max !== null) {
+            $candidates = $this->filter($candidates, fn (array $candidate) => $this->variationCount($candidate) <= $max);
+        }
+
+        return $candidates;
+    }
+
+    /**
+     * @param  array<string, mixed>  $candidate
+     */
+    private function variationCount(array $candidate): int
+    {
+        return (int) ($candidate['weaker_count'] ?? count((array) ($candidate['weaker_found'] ?? [])));
     }
 
     public function forRange(string $from, string $to, int $limit = 1000): array

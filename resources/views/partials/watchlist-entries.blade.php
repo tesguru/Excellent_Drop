@@ -161,6 +161,13 @@
                             </button>
 
                             @include('partials.rdap-action', ['domain' => $entry['domain']])
+
+                            <button type="button"
+                                    class="watch-remove chip border px-2.5 py-1 text-xs transition hover:text-[color:var(--text)]"
+                                    style="border-color: var(--border); color: rgb(225 29 72)"
+                                    aria-label="Remove {{ $entry['domain'] }} from the watchlist">
+                                Remove
+                            </button>
                         </div>
                     </div>
 
@@ -323,7 +330,9 @@
                 of <span class="font-semibold tabular-nums" style="color: var(--text)">{{ number_format($total) }}</span>
             </p>
 
-            <div class="flex items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2">
+                @include('partials.page-mover', ['page' => $page, 'pages' => $pages])
+
                 @if ($page > 1)
                     <a href="{{ request()->fullUrlWithQuery(['page' => $page - 1]) }}"
                        class="btn btn-ghost px-3 py-1.5 text-xs">Previous</a>
