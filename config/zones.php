@@ -107,7 +107,7 @@ return [
     'weaker' => [
         'max_per_rule' => (int) env('WEAKER_MAX_PER_RULE', 50),
         'phase2_enabled' => (bool) env('WEAKER_PHASE2_ENABLED', false),
-        'chunk_size' => (int) env('WEAKER_CHUNK_SIZE', 5000),
+        'chunk_size' => (int) env('WEAKER_CHUNK_SIZE', 500),
     ],
 
     /*

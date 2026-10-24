@@ -3,6 +3,7 @@
 namespace App\Services\Candidates;
 
 use App\Services\ClickHouse\ClickHouseClient;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Finds the weaker versions of removed .com names.
@@ -53,6 +54,18 @@ class WeakerSearcher
     /** Batched SQL can be a few megabytes, above ClickHouse's 256 KiB default. */
     private const QUERY_SETTINGS = ['max_query_size' => 67108864];
 
+    /** Suffix queries must use the projection or not run at all. */
+    private const SUFFIX_SETTINGS = [
+        'max_query_size' => 67108864,
+        'force_optimize_projection' => 1,
+    ];
+
+    /** Safety cap for one batched prefix/suffix lookup. */
+    private const MAX_RANGE_ROWS = 200000;
+
+    /** False once the name_rev_order projection is known to be missing. */
+    private ?bool $endsWithAvailable = null;
+
     /**
      * @param  array<string, mixed>  $config
      */
@@ -98,9 +111,10 @@ class WeakerSearcher
         // 1. The same name on another TLD.
         $this->collect(
             $details,
-            $this->queryOtherTld($names, $snapshotDate, $tlds, $limit),
+            $this->queryExact($names, $snapshotDate, $tlds),
             self::SIGNAL_OTHER_TLD,
             fn (string $base, string $label): int => 0,
+            $limit,
         );
 
         // 2. The same name with a hyphen inserted at any split point.
@@ -108,11 +122,11 @@ class WeakerSearcher
 
         foreach ($names as $name) {
             foreach ($this->hyphenVariants($name) as $variant) {
-                $hyphens[] = [$name, $variant];
+                $hyphens[$variant][$name] = true;
             }
         }
 
-        $this->collectPairs(
+        $this->collectVariants(
             $details,
             $hyphens,
             $snapshotDate,
@@ -123,31 +137,37 @@ class WeakerSearcher
         );
 
         // 3. Names that start with the dropped name.
-        $this->collect(
+        $this->collectPrefixes(
             $details,
-            $this->queryStartsWith($names, $snapshotDate, $tlds, $limit),
+            $names,
+            $this->queryPrefixes($names, $snapshotDate, $tlds),
             self::SIGNAL_STARTS_WITH,
             fn (string $base, string $label): int => max(1, strlen($label) - strlen($base)),
+            $limit,
         );
 
         // 4. Names that end with the dropped name (searched through name_rev).
-        $this->collect(
-            $details,
-            $this->queryEndsWith($names, $snapshotDate, $tlds, $limit),
-            self::SIGNAL_ENDS_WITH,
-            fn (string $base, string $label): int => max(1, strlen($label) - strlen($base)),
-        );
+        if ($this->endsWithAvailable()) {
+            $this->collectSuffixes(
+                $details,
+                $names,
+                $this->querySuffixes($names, $snapshotDate, $tlds),
+                self::SIGNAL_ENDS_WITH,
+                fn (string $base, string $label): int => max(1, strlen($label) - strlen($base)),
+                $limit,
+            );
+        }
 
         // 5. Plural or singular of the dropped name.
         $plurals = [];
 
         foreach ($names as $name) {
             foreach ($this->pluralVariants($name) as $variant) {
-                $plurals[] = [$name, $variant];
+                $plurals[$variant][$name] = true;
             }
         }
 
-        $this->collectPairs(
+        $this->collectVariants(
             $details,
             $plurals,
             $snapshotDate,
@@ -163,11 +183,11 @@ class WeakerSearcher
 
             foreach ($names as $name) {
                 foreach ($this->misspellingVariants($name) as $variant) {
-                    $misspellings[] = [$name, $variant];
+                    $misspellings[$variant][$name] = true;
                 }
             }
 
-            $this->collectPairs(
+            $this->collectVariants(
                 $details,
                 $misspellings,
                 $snapshotDate,
@@ -182,6 +202,7 @@ class WeakerSearcher
                 $this->queryContains($names, $snapshotDate, $tlds, $limit),
                 self::SIGNAL_CONTAINS,
                 fn (string $base, string $label): int => max(1, strlen($label) - strlen($base)),
+                $limit,
             );
         }
 
@@ -287,82 +308,258 @@ class WeakerSearcher
      * @param  array<int, array<string, mixed>>  $rows
      * @param  callable(string, string): int  $addedChars
      */
-    private function collect(array &$details, array $rows, string $signal, callable $addedChars): void
+    private function collect(array &$details, array $rows, string $signal, callable $addedChars, int $limit): void
     {
+        $counts = [];
+
         foreach ($rows as $row) {
             $base = strtolower((string) ($row['base'] ?? ''));
-            $tld = strtolower((string) ($row['tld'] ?? ''));
-            $label = strtolower((string) ($row['name'] ?? ''));
 
-            if ($base === '' || $tld === '' || $label === '') {
+            if ($base === '' || ($counts[$base] ?? 0) >= $limit) {
                 continue;
             }
 
-            $domain = $label.'.'.$tld;
+            $counts[$base] = ($counts[$base] ?? 0) + 1;
 
-            if (! isset($details[$base][$domain])
-                && isset($details[$base])
-                && count($details[$base]) >= self::MAX_DETAILS_PER_NAME) {
-                continue;
-            }
-
-            if (! isset($details[$base][$domain])) {
-                $details[$base][$domain] = [
-                    'domain' => $domain,
-                    'tld' => $tld,
-                    'name' => $label,
-                    'signals' => [],
-                    'added_chars' => PHP_INT_MAX,
-                    'nameservers' => [],
-                ];
-            }
-
-            $ns = array_values(array_filter(array_map(
-                'trim',
-                preg_split('/[,\s]+/', (string) ($row['ns'] ?? '')) ?: [],
-            )));
-
-            $details[$base][$domain]['nameservers'] = array_values(array_unique(array_merge(
-                $details[$base][$domain]['nameservers'],
-                $ns,
-            )));
-
-            if (! in_array($signal, $details[$base][$domain]['signals'], true)) {
-                $details[$base][$domain]['signals'][] = $signal;
-            }
-
-            $added = max(0, $addedChars($base, $label));
-
-            if ($added < $details[$base][$domain]['added_chars']) {
-                $details[$base][$domain]['added_chars'] = $added;
-            }
+            $this->addDetail($details, $base, $row, $signal, $addedChars);
         }
     }
 
     /**
-     * @param  array<string, array<string, array<string, mixed>>>  $details
-     * @param  array<int, array{0:string, 1:string}>  $pairs
+     * @param  array<string, array<string, array{domain:string, tld:string, name:string, signals:array<int,string>, added_chars:int, nameservers:array<int,string>}>>  $details
+     * @param  array<string, mixed>  $row
      * @param  callable(string, string): int  $addedChars
      */
-    private function collectPairs(
+    private function addDetail(array &$details, string $base, array $row, string $signal, callable $addedChars): void
+    {
+        $tld = strtolower((string) ($row['tld'] ?? ''));
+        $label = strtolower((string) ($row['name'] ?? ''));
+
+        if ($tld === '' || $label === '') {
+            return;
+        }
+
+        $domain = $label.'.'.$tld;
+
+        if (! isset($details[$base][$domain])
+            && isset($details[$base])
+            && count($details[$base]) >= self::MAX_DETAILS_PER_NAME) {
+            return;
+        }
+
+        if (! isset($details[$base][$domain])) {
+            $details[$base][$domain] = [
+                'domain' => $domain,
+                'tld' => $tld,
+                'name' => $label,
+                'signals' => [],
+                'added_chars' => PHP_INT_MAX,
+                'nameservers' => [],
+            ];
+        }
+
+        $ns = array_values(array_filter(array_map(
+            'trim',
+            preg_split('/[,\s]+/', (string) ($row['ns'] ?? '')) ?: [],
+        )));
+
+        $details[$base][$domain]['nameservers'] = array_values(array_unique(array_merge(
+            $details[$base][$domain]['nameservers'],
+            $ns,
+        )));
+
+        if (! in_array($signal, $details[$base][$domain]['signals'], true)) {
+            $details[$base][$domain]['signals'][] = $signal;
+        }
+
+        $added = max(0, $addedChars($base, $label));
+
+        if ($added < $details[$base][$domain]['added_chars']) {
+            $details[$base][$domain]['added_chars'] = $added;
+        }
+    }
+
+    /**
+     * Resolve generated variants (hyphen, plural, misspelling) with one
+     * indexed lookup and map each row back to every name that produced it.
+     *
+     * @param  array<string, array<string, true>>  $variants  variant => base => true
+     * @param  array<int, string>  $tlds
+     * @param  callable(string, string): int  $addedChars
+     */
+    private function collectVariants(
         array &$details,
-        array $pairs,
+        array $variants,
         string $snapshotDate,
         array $tlds,
         int $limit,
         string $signal,
         callable $addedChars,
     ): void {
-        if ($pairs === []) {
+        if ($variants === []) {
             return;
         }
 
-        $this->collect(
-            $details,
-            $this->queryPairs($pairs, $snapshotDate, $tlds, $limit),
-            $signal,
-            $addedChars,
-        );
+        $counts = [];
+
+        foreach ($this->queryNames(array_map('strval', array_keys($variants)), $snapshotDate, $tlds) as $row) {
+            $variant = strtolower((string) ($row['name'] ?? ''));
+
+            foreach (array_keys($variants[$variant] ?? []) as $base) {
+                $base = (string) $base;
+
+                if (($counts[$base] ?? 0) >= $limit) {
+                    continue;
+                }
+
+                $counts[$base] = ($counts[$base] ?? 0) + 1;
+                $row['base'] = $base;
+
+                $this->addDetail($details, $base, $row, $signal, $addedChars);
+            }
+        }
+    }
+
+    /**
+     * Map prefix matches back to the dropped names. The SQL has already
+     * limited the rows to the prefix ranges; this only applies the short-name
+     * rule and the per-rule cap.
+     *
+     * @param  array<int, string>  $names
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  callable(string, string): int  $addedChars
+     */
+    private function collectPrefixes(
+        array &$details,
+        array $names,
+        array $rows,
+        string $signal,
+        callable $addedChars,
+        int $limit,
+    ): void {
+        if ($rows === [] || $names === []) {
+            return;
+        }
+
+        $byFirst = [];
+
+        foreach ($names as $name) {
+            $byFirst[$name[0]][] = $name;
+        }
+
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $label = strtolower((string) ($row['name'] ?? ''));
+
+            if ($label === '') {
+                continue;
+            }
+
+            foreach ($byFirst[$label[0]] ?? [] as $base) {
+                if (! str_starts_with($label, $base) || $label === $base) {
+                    continue;
+                }
+
+                $added = strlen($label) - strlen($base);
+
+                if (strlen($base) <= self::SHORT_NAME_MAX_LENGTH
+                    && ($added < 1 || $added > self::SHORT_MAX_ADDED_CHARS)) {
+                    continue;
+                }
+
+                if (($counts[$base] ?? 0) >= $limit) {
+                    continue;
+                }
+
+                $counts[$base] = ($counts[$base] ?? 0) + 1;
+                $row['base'] = $base;
+
+                $this->addDetail($details, $base, $row, $signal, $addedChars);
+            }
+        }
+    }
+
+    /**
+     * Map suffix matches back to the dropped names.
+     *
+     * @param  array<int, string>  $names
+     * @param  array<int, array<string, mixed>>  $rows
+     * @param  callable(string, string): int  $addedChars
+     */
+    private function collectSuffixes(
+        array &$details,
+        array $names,
+        array $rows,
+        string $signal,
+        callable $addedChars,
+        int $limit,
+    ): void {
+        if ($rows === [] || $names === []) {
+            return;
+        }
+
+        $byLast = [];
+
+        foreach ($names as $name) {
+            $byLast[substr($name, -1)][] = $name;
+        }
+
+        $counts = [];
+
+        foreach ($rows as $row) {
+            $label = strtolower((string) ($row['name'] ?? ''));
+
+            if ($label === '') {
+                continue;
+            }
+
+            foreach ($byLast[substr($label, -1)] ?? [] as $base) {
+                if (! str_ends_with($label, $base) || $label === $base) {
+                    continue;
+                }
+
+                $added = strlen($label) - strlen($base);
+
+                if (strlen($base) <= self::SHORT_NAME_MAX_LENGTH
+                    && ($added < 1 || $added > self::SHORT_MAX_ADDED_CHARS)) {
+                    continue;
+                }
+
+                if (($counts[$base] ?? 0) >= $limit) {
+                    continue;
+                }
+
+                $counts[$base] = ($counts[$base] ?? 0) + 1;
+                $row['base'] = $base;
+
+                $this->addDetail($details, $base, $row, $signal, $addedChars);
+            }
+        }
+    }
+
+    /**
+     * The ends-with search needs the name_rev_order projection; without it
+     * every query would scan the whole snapshot. Check once per process and
+     * skip the rule until the projection is materialized.
+     */
+    private function endsWithAvailable(): bool
+    {
+        if ($this->endsWithAvailable !== null) {
+            return $this->endsWithAvailable;
+        }
+
+        $count = (int) $this->clickhouse->scalar(sprintf(
+            'SELECT count() FROM system.projection_parts '
+            ."WHERE database = %s AND table = 'zone_names' AND name = 'name_rev_order'",
+            $this->sqlString($this->database),
+        ));
+
+        if ($count === 0) {
+            Log::warning('WeakerSearcher: ends-with rule skipped; the name_rev_order projection is not materialized.');
+        }
+
+        return $this->endsWithAvailable = $count > 0;
     }
 
     /**
@@ -494,138 +691,139 @@ class WeakerSearcher
     }
 
     /**
+     * The same name on another TLD. The .com row is the dropped domain
+     * itself and never counts.
+     *
      * @param  array<int, string>  $names
      * @param  array<int, string>  $tlds
      * @return array<int, array<string, mixed>>
      */
-    private function queryOtherTld(array $names, string $snapshotDate, array $tlds, int $limit): array
+    private function queryExact(array $names, string $snapshotDate, array $tlds): array
     {
-        // Every snapshot is searched, including .com. The dropped domain
-        // itself is the only exact .com match and must not count.
         $sql = sprintf(
-            'SELECT base, tld, name, ns FROM ('
-            .'SELECT r.name AS base, z.tld AS tld, z.name AS name, z.ns AS ns '
-            .'FROM %s.zone_names AS z '
-            .'INNER JOIN (SELECT arrayJoin(%s) AS name) AS r ON z.name = r.name '
-            .'WHERE z.snapshot_date = %s AND z.tld IN %s '
-            .'AND NOT (z.tld = \'com\' AND z.name = r.name)'
-            .') ORDER BY base, tld LIMIT %d BY base',
+            'SELECT name AS base, tld, name, ns FROM %s.zone_names '
+            .'WHERE snapshot_date = %s AND tld IN %s AND tld != \'com\' AND name IN %s '
+            .'ORDER BY name, tld',
             $this->database,
-            $this->sqlArray($names),
             $this->sqlString($snapshotDate),
             $this->sqlArray($tlds),
-            $limit,
+            $this->sqlArray($names),
         );
 
         return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
     }
 
     /**
-     * @param  array<int, array{0:string, 1:string}>  $pairs
+     * Resolve an exact set of names across the snapshots in one indexed
+     * lookup.
+     *
+     * @param  array<int, string>  $names
      * @param  array<int, string>  $tlds
      * @return array<int, array<string, mixed>>
      */
-    private function queryPairs(array $pairs, string $snapshotDate, array $tlds, int $limit): array
+    private function queryNames(array $names, string $snapshotDate, array $tlds): array
     {
-        $seen = [];
-        $values = [];
-
-        foreach ($pairs as [$base, $variant]) {
-            if ($base === '' || $variant === '') {
-                continue;
-            }
-
-            $key = $base."\0".$variant;
-
-            if (isset($seen[$key])) {
-                continue;
-            }
-
-            $seen[$key] = true;
-            $values[] = '('.$this->sqlString($base).','.$this->sqlString($variant).')';
-        }
-
-        if ($values === []) {
+        if ($names === []) {
             return [];
         }
 
         $sql = sprintf(
-            'SELECT base, tld, name, ns FROM ('
-            .'SELECT tupleElement(v.pair, 1) AS base, z.tld AS tld, z.name AS name, z.ns AS ns '
-            .'FROM %s.zone_names AS z '
-            .'INNER JOIN (SELECT arrayJoin(%s) AS pair) AS v ON z.name = tupleElement(v.pair, 2) '
-            .'WHERE z.snapshot_date = %s AND z.tld IN %s'
-            .') ORDER BY base, name, tld LIMIT %d BY base',
+            'SELECT name, tld, ns FROM %s.zone_names '
+            .'WHERE snapshot_date = %s AND tld IN %s AND name IN %s '
+            .'ORDER BY name, tld',
             $this->database,
-            '['.implode(',', $values).']',
             $this->sqlString($snapshotDate),
             $this->sqlArray($tlds),
-            $limit,
-        );
-
-        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
-    }
-
-    /**
-     * @param  array<int, string>  $names
-     * @param  array<int, string>  $tlds
-     * @return array<int, array<string, mixed>>
-     */
-    private function queryStartsWith(array $names, string $snapshotDate, array $tlds, int $limit): array
-    {
-        $sql = sprintf(
-            'SELECT base, tld, name, ns FROM ('
-            .'SELECT r.name AS base, z.tld AS tld, z.name AS name, z.ns AS ns '
-            .'FROM %s.zone_names AS z '
-            .'INNER JOIN (SELECT arrayJoin(%s) AS name) AS r '
-            .'ON startsWith(z.name, r.name) AND z.name != r.name '
-            .'WHERE z.snapshot_date = %s AND z.tld IN %s'
-            .') WHERE (length(base) > %d OR length(name) - length(base) BETWEEN 1 AND %d) '
-            .'ORDER BY base, name, tld LIMIT %d BY base',
-            $this->database,
             $this->sqlArray($names),
-            $this->sqlString($snapshotDate),
-            $this->sqlArray($tlds),
-            self::SHORT_NAME_MAX_LENGTH,
-            self::SHORT_MAX_ADDED_CHARS,
-            $limit,
         );
 
         return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
     }
 
     /**
+     * Names that start with one of the dropped names. The primary key is
+     * (snapshot_date, tld, name), so each prefix is an index range instead of
+     * a full-table startsWith() scan.
+     *
      * @param  array<int, string>  $names
      * @param  array<int, string>  $tlds
      * @return array<int, array<string, mixed>>
      */
-    private function queryEndsWith(array $names, string $snapshotDate, array $tlds, int $limit): array
+    private function queryPrefixes(array $names, string $snapshotDate, array $tlds): array
     {
-        $values = [];
+        if ($names === []) {
+            return [];
+        }
+
+        $ranges = [];
 
         foreach ($names as $name) {
-            $values[] = '('.$this->sqlString($name).','.$this->sqlString(strrev($name)).')';
+            $range = '(name >= '.$this->sqlString($name)
+                .' AND name < '.$this->sqlString($name.'{');
+
+            if (strlen($name) <= self::SHORT_NAME_MAX_LENGTH) {
+                $range .= ' AND length(name) - '.strlen($name)
+                    .' BETWEEN 1 AND '.self::SHORT_MAX_ADDED_CHARS;
+            }
+
+            $ranges[] = $range.')';
         }
 
         $sql = sprintf(
-            'SELECT base, tld, name, ns FROM ('
-            .'SELECT tupleElement(v.pair, 1) AS base, z.tld AS tld, z.name AS name, z.ns AS ns '
-            .'FROM %s.zone_names AS z '
-            .'INNER JOIN (SELECT arrayJoin(%s) AS pair) AS v '
-            .'ON startsWith(z.name_rev, tupleElement(v.pair, 2)) AND z.name != tupleElement(v.pair, 1) '
-            .'WHERE z.snapshot_date = %s AND z.tld IN %s'
-            .') WHERE (length(base) > %d OR length(name) - length(base) BETWEEN 1 AND %d) '
-            .'ORDER BY base, name, tld LIMIT %d BY base',
+            'SELECT name, tld, ns FROM %s.zone_names '
+            .'WHERE snapshot_date = %s AND tld IN %s AND (%s) '
+            .'ORDER BY name, tld LIMIT %d',
             $this->database,
-            '['.implode(',', $values).']',
             $this->sqlString($snapshotDate),
             $this->sqlArray($tlds),
-            self::SHORT_NAME_MAX_LENGTH,
-            self::SHORT_MAX_ADDED_CHARS,
-            $limit,
+            implode(' OR ', $ranges),
+            self::MAX_RANGE_ROWS,
         );
 
         return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
+    }
+
+    /**
+     * Names that end with one of the dropped names. This runs only when the
+     * name_rev_order projection is materialized; the caller checks first.
+     *
+     * @param  array<int, string>  $names
+     * @param  array<int, string>  $tlds
+     * @return array<int, array<string, mixed>>
+     */
+    private function querySuffixes(array $names, string $snapshotDate, array $tlds): array
+    {
+        if ($names === []) {
+            return [];
+        }
+
+        $ranges = [];
+
+        foreach ($names as $name) {
+            $reverse = strrev($name);
+            $range = '(name_rev >= '.$this->sqlString($reverse)
+                .' AND name_rev < '.$this->sqlString($reverse.'{');
+
+            if (strlen($name) <= self::SHORT_NAME_MAX_LENGTH) {
+                $range .= ' AND length(name) - '.strlen($name)
+                    .' BETWEEN 1 AND '.self::SHORT_MAX_ADDED_CHARS;
+            }
+
+            $ranges[] = $range.')';
+        }
+
+        $sql = sprintf(
+            'SELECT name, tld, ns FROM %s.zone_names '
+            .'WHERE snapshot_date = %s AND tld IN %s AND (%s) '
+            .'ORDER BY name, tld LIMIT %d',
+            $this->database,
+            $this->sqlString($snapshotDate),
+            $this->sqlArray($tlds),
+            implode(' OR ', $ranges),
+            self::MAX_RANGE_ROWS,
+        );
+
+        return $this->clickhouse->rowsFromSql($sql, self::SUFFIX_SETTINGS);
     }
 
     /**
