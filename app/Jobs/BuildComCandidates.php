@@ -16,8 +16,11 @@ use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
- * Step 5 of the chain: find the weaker versions of every removed .com name
- * and score the result.
+ * Step 5 of the chain: find the weaker versions of the .com names that were
+ * removed today and score the result.
+ *
+ * Only today's removals are searched. An earlier day is never searched again,
+ * and a rerun only replaces today's rows.
  */
 class BuildComCandidates implements ShouldQueue
 {
@@ -29,9 +32,14 @@ class BuildComCandidates implements ShouldQueue
 
     public int $tries = 1;
 
+    private const INSERT_BATCH_SIZE = 1000;
+
+    private const QUERY_SETTINGS = ['max_query_size' => 67108864];
+
     public function __construct(public readonly string $runId)
     {
         $this->onQueue((string) config('zones.queue'));
+        $this->onConnection('zones');
     }
 
     public function runIdentifier(): string
@@ -58,31 +66,25 @@ class BuildComCandidates implements ShouldQueue
                 return;
             }
 
-            $removed = $this->removedComNames($clickhouse, $today);
-            $alreadyBuilt = $this->builtCandidateNames($clickhouse, $today);
+            // A rerun replaces today's rows only. Older candidate days are
+            // history and are never touched here.
+            $this->deleteCandidatesFor($clickhouse, $today);
 
-            $candidates = [];
+            $totalRemoved = $this->removedTodayCount($clickhouse, $today);
 
-            foreach ($removed as $name => $eventDate) {
-                if ($eventDate !== $today && isset($alreadyBuilt[$eventDate][$name])) {
-                    continue;
-                }
-
-                $candidate = $this->buildCandidate($name, $eventDate, $tlds, $searcher, $scorer, $ownership);
-
-                if ($candidate !== null) {
-                    $candidates[] = $candidate;
-                }
-            }
-
-            if ($candidates === []) {
-                $this->finishRun(0, 'No .com candidates with weaker versions today.');
+            if ($totalRemoved === 0) {
+                $this->finishRun(0, 'No .com names removed today.');
             } else {
-                $this->replaceCandidates($clickhouse, $candidates);
+                $result = $this->build($clickhouse, $searcher, $scorer, $ownership, $today, $tlds, $totalRemoved);
 
-                $this->finishRun(count($candidates), sprintf(
-                    'Built %d candidate(s) with weaker versions',
-                    count($candidates),
+                $this->finishRun($result['candidates'], sprintf(
+                    'Built %d candidate(s) from %s removed name(s) in %d chunk(s) in %.1fs (%s restored, %s searched)',
+                    $result['candidates'],
+                    number_format($result['read']),
+                    $result['chunks'],
+                    $result['seconds'],
+                    number_format($result['restored']),
+                    number_format($result['searched']),
                 ));
             }
         } catch (Throwable $exception) {
@@ -96,22 +98,180 @@ class BuildComCandidates implements ShouldQueue
 
     /**
      * @param  array<int, string>  $tlds
-     * @return array<string, mixed>|null
+     * @return array{read:int, searched:int, restored:int, candidates:int, chunks:int, seconds:float}
      */
-    private function buildCandidate(
-        string $name,
-        string $eventDate,
-        array $tlds,
+    private function build(
+        ClickHouseClient $clickhouse,
         WeakerSearcher $searcher,
         Scorer $scorer,
         OwnerIndependence $ownership,
-    ): ?array {
-        $result = $searcher->find($name, $eventDate, $tlds);
+        string $today,
+        array $tlds,
+        int $totalRemoved,
+    ): array {
+        $chunkSize = max(1, (int) config('zones.weaker.chunk_size', 5000));
 
-        if ($result['weaker_found'] === []) {
-            return null;
+        $read = 0;
+        $searched = 0;
+        $restored = 0;
+        $candidates = 0;
+        $chunks = 0;
+        $started = microtime(true);
+
+        /** @var array<int, string> $chunk */
+        $chunk = [];
+
+        $flush = function () use (
+            &$chunk,
+            &$read,
+            &$searched,
+            &$restored,
+            &$candidates,
+            &$chunks,
+            $clickhouse,
+            $searcher,
+            $scorer,
+            $ownership,
+            $today,
+            $tlds,
+            $totalRemoved,
+        ): void {
+            if ($chunk === []) {
+                return;
+            }
+
+            $chunkStarted = microtime(true);
+            $namesInChunk = count($chunk);
+
+            $names = $this->withoutRestored($clickhouse, $chunk, $today);
+
+            $results = $names === [] ? [] : $searcher->findMany($names, $today, $tlds);
+            $rows = [];
+
+            foreach ($names as $name) {
+                $result = $results[$name] ?? null;
+
+                if ($result === null || $result['weaker_found'] === []) {
+                    continue;
+                }
+
+                $rows[] = $this->candidate($name, $today, $result, $scorer, $ownership);
+            }
+
+            foreach (array_chunk($rows, self::INSERT_BATCH_SIZE) as $batch) {
+                $clickhouse->insertJsonEachRow($clickhouse->database().'.com_candidates', $batch);
+            }
+
+            $read += $namesInChunk;
+            $searched += count($names);
+            $restored += $namesInChunk - count($names);
+            $candidates += count($rows);
+            $chunks++;
+
+            $chunk = [];
+
+            $seconds = microtime(true) - $chunkStarted;
+
+            $this->updateRun([
+                'rows' => $candidates,
+                'bytes_done' => $read,
+                'bytes_total' => $totalRemoved,
+                'message' => sprintf(
+                    'Chunk %d: %s read, %s searched, %s candidates (%.1fs)',
+                    $chunks,
+                    number_format($namesInChunk),
+                    number_format(count($names)),
+                    number_format(count($rows)),
+                    $seconds,
+                ),
+            ]);
+
+            Log::info('Candidate chunk built', [
+                'run_id' => $this->runId,
+                'chunk' => $chunks,
+                'read' => $namesInChunk,
+                'searched' => count($names),
+                'candidates' => count($rows),
+                'seconds' => round($seconds, 2),
+            ]);
+        };
+
+        $clickhouse->streamRows(
+            $this->removedTodaySql($clickhouse, $today),
+            function (array $row) use (&$chunk, $chunkSize, $flush): void {
+                $name = (string) ($row['name'] ?? '');
+
+                if ($name === '') {
+                    return;
+                }
+
+                $chunk[] = $name;
+
+                if (count($chunk) >= $chunkSize) {
+                    $flush();
+                }
+            },
+        );
+
+        $flush();
+
+        return [
+            'read' => $read,
+            'searched' => $searched,
+            'restored' => $restored,
+            'candidates' => $candidates,
+            'chunks' => $chunks,
+            'seconds' => microtime(true) - $started,
+        ];
+    }
+
+    /**
+     * A name that is back in today's .com snapshot was restored, not dropped,
+     * so it never gets a candidate.
+     *
+     * @param  array<int, string>  $names
+     * @return array<int, string>
+     */
+    private function withoutRestored(ClickHouseClient $clickhouse, array $names, string $today): array
+    {
+        if ($names === []) {
+            return [];
         }
 
+        $rows = $clickhouse->rowsFromSql(
+            sprintf(
+                'SELECT name FROM %s.zone_names '
+                .'WHERE snapshot_date = %s AND tld = \'com\' AND name IN %s',
+                $clickhouse->database(),
+                $this->sqlString($today),
+                $this->sqlArray($names),
+            ),
+            self::QUERY_SETTINGS,
+        );
+
+        $present = [];
+
+        foreach ($rows as $row) {
+            $present[(string) ($row['name'] ?? '')] = true;
+        }
+
+        return array_values(array_filter(
+            $names,
+            fn (string $name) => ! isset($present[$name]),
+        ));
+    }
+
+    /**
+     * @param  array<string, mixed>  $result
+     * @return array<string, mixed>
+     */
+    private function candidate(
+        string $name,
+        string $eventDate,
+        array $result,
+        Scorer $scorer,
+        OwnerIndependence $ownership,
+    ): array {
         // Owner independence comes from the nameservers published in the
         // zone snapshots. Missing data is unknown, never a reason to hide a
         // candidate.
@@ -130,115 +290,55 @@ class BuildComCandidates implements ShouldQueue
             $tldCount,
         );
 
-        Log::info('Candidate built', [
-            'name' => $name,
-            'weaker' => count($result['weaker_found']),
-            'tlds' => $tldCount,
-            'score' => $scored['score'],
-        ]);
-
         return [
             'event_date' => $eventDate,
             'name' => $name,
-            'weaker_found' => $result['weaker_found'],
-            'weaker_types' => $result['weaker_types'],
+            'weaker_found' => array_values($result['weaker_found']),
+            'weaker_types' => array_values($result['weaker_types']),
             'weaker_count' => count($result['weaker_found']),
-            'tld_count' => $tldCount,
-            'is_short' => strlen($name) <= WeakerSearcher::SHORT_NAME_MAX_LENGTH,
+            'tld_count' => min($tldCount, 255),
+            'is_short' => strlen($name) <= WeakerSearcher::SHORT_NAME_MAX_LENGTH ? 1 : 0,
             'score' => $scored['score'],
         ];
     }
 
-    /**
-     * @param  array<int, array<string, mixed>>  $candidates
-     */
-    private function replaceCandidates(ClickHouseClient $clickhouse, array $candidates): void
+    private function deleteCandidatesFor(ClickHouseClient $clickhouse, string $date): void
     {
-        $dates = array_values(array_unique(array_map(fn (array $c) => (string) $c['event_date'], $candidates)));
+        $clickhouse->execute(
+            sprintf(
+                'ALTER TABLE %s.com_candidates DELETE WHERE event_date = {d:Date} SETTINGS mutations_sync = 2',
+                $clickhouse->database(),
+            ),
+            ['d' => $date],
+        );
+    }
 
-        foreach ($dates as $date) {
-            $clickhouse->execute(
-                sprintf(
-                    'ALTER TABLE %s.com_candidates DELETE WHERE event_date = {d:Date} SETTINGS mutations_sync = 2',
-                    $clickhouse->database(),
-                ),
-                ['d' => $date],
-            );
-        }
-
-        foreach ($candidates as $candidate) {
-            $clickhouse->execute(
-                sprintf(
-                    'INSERT INTO %s.com_candidates '
-                    .'(event_date, name, weaker_found, weaker_types, weaker_count, tld_count, is_short, score) '
-                    .'VALUES ({d:Date}, {n:String}, {wf:Array(String)}, {wt:Array(String)}, {wc:UInt32}, {tc:UInt8}, {short:UInt8}, {s:Float32})',
-                    $clickhouse->database(),
-                ),
-                [
-                    'd' => $candidate['event_date'],
-                    'n' => $candidate['name'],
-                    'wf' => $candidate['weaker_found'],
-                    'wt' => $candidate['weaker_types'],
-                    'wc' => $candidate['weaker_count'],
-                    'tc' => min($candidate['tld_count'], 255),
-                    'short' => $candidate['is_short'] ? 1 : 0,
-                    's' => $candidate['score'],
-                ],
-            );
-        }
+    private function removedTodayCount(ClickHouseClient $clickhouse, string $today): int
+    {
+        return (int) $clickhouse->scalar(
+            sprintf(
+                'SELECT count() AS total FROM ('
+                .'SELECT DISTINCT name FROM %s.zone_events '
+                .'WHERE tld = \'com\' AND event = \'removed\' AND event_date = %s'
+                .')',
+                $clickhouse->database(),
+                $this->sqlString($today),
+            ),
+        );
     }
 
     /**
-     * Removed .com names for the last seven days, keyed by name.
-     *
-     * @return array<string, string> name => event date
+     * Stream only today's removals. No earlier day is ever searched again.
      */
-    private function removedComNames(ClickHouseClient $clickhouse, string $today): array
+    private function removedTodaySql(ClickHouseClient $clickhouse, string $today): string
     {
-        $from = now()->subDays(7)->format('Y-m-d');
-
-        $rows = $clickhouse->rows(
-            sprintf(
-                'SELECT name, event_date FROM %s.zone_events '
-                .'WHERE tld = {tld:String} AND event = {event:String} AND event_date >= {from:Date} AND event_date <= {to:Date} '
-                .'ORDER BY event_date, name',
-                $clickhouse->database(),
-            ),
-            ['tld' => 'com', 'event' => 'removed', 'from' => $from, 'to' => $today],
+        return sprintf(
+            'SELECT DISTINCT name FROM %s.zone_events '
+            .'WHERE tld = \'com\' AND event = \'removed\' AND event_date = %s '
+            .'ORDER BY name',
+            $clickhouse->database(),
+            $this->sqlString($today),
         );
-
-        $names = [];
-
-        foreach ($rows as $row) {
-            $names[(string) ($row['name'] ?? '')] = (string) ($row['event_date'] ?? '');
-        }
-
-        return $names;
-    }
-
-    /**
-     * @return array<string, array<string, true>>
-     */
-    private function builtCandidateNames(ClickHouseClient $clickhouse, string $today): array
-    {
-        $from = now()->subDays(7)->format('Y-m-d');
-
-        $rows = $clickhouse->rows(
-            sprintf(
-                'SELECT name, event_date FROM %s.com_candidates WHERE event_date >= {from:Date} AND event_date <= {to:Date}',
-                $clickhouse->database(),
-            ),
-            ['from' => $from, 'to' => $today],
-        );
-
-        $built = [];
-
-        foreach ($rows as $row) {
-            $date = (string) ($row['event_date'] ?? '');
-            $built[$date][(string) ($row['name'] ?? '')] = true;
-        }
-
-        return $built;
     }
 
     /**
@@ -252,5 +352,18 @@ class BuildComCandidates implements ShouldQueue
         );
 
         return array_values(array_filter(array_map(fn (array $row) => (string) ($row['tld'] ?? ''), $rows)));
+    }
+
+    /**
+     * @param  array<int, string>  $values
+     */
+    private function sqlArray(array $values): string
+    {
+        return '['.implode(',', array_map(fn (string $value) => $this->sqlString($value), $values)).']';
+    }
+
+    private function sqlString(string $value): string
+    {
+        return "'".str_replace(['\\', "'"], ['\\\\', "\\'"], $value)."'";
     }
 }

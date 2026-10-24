@@ -32,6 +32,7 @@ class DiffZones implements ShouldQueue
     public function __construct(public readonly string $runId)
     {
         $this->onQueue((string) config('zones.queue'));
+        $this->onConnection('zones');
     }
 
     public function runIdentifier(): string

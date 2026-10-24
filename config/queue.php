@@ -44,6 +44,17 @@ return [
             'after_commit' => false,
         ],
 
+        // A zone step can run for hours. retry_after must sit above the
+        // longest step or a second worker would pick the same job up.
+        'zones' => [
+            'driver' => 'database',
+            'connection' => env('DB_QUEUE_CONNECTION'),
+            'table' => env('DB_QUEUE_TABLE', 'jobs'),
+            'queue' => env('ZONES_QUEUE', 'zones'),
+            'retry_after' => (int) env('ZONES_QUEUE_RETRY_AFTER', 86400),
+            'after_commit' => false,
+        ],
+
         'beanstalkd' => [
             'driver' => 'beanstalkd',
             'host' => env('BEANSTALKD_QUEUE_HOST', 'localhost'),

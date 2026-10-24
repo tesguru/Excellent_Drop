@@ -4,6 +4,7 @@ namespace App\Services\ClickHouse;
 
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
+use Throwable;
 
 /**
  * Thin wrapper around the clickhouse-client binary.
@@ -139,25 +140,195 @@ class ClickHouseClient
             $out = $this->run($sql, $params, ['--format', 'JSONEachRow']);
         }
 
-        $out = trim($out);
+        return $this->decodeRows($out);
+    }
 
-        if ($out === '') {
+    /**
+     * Run a query that was built in PHP, sending the SQL through stdin so a
+     * large batched IN list never has to fit in the process arguments.
+     *
+     * @param  array<string, int|string>  $settings
+     * @return array<int, array<string, mixed>>
+     */
+    public function rowsFromSql(string $sql, array $settings = []): array
+    {
+        $process = new Process(
+            array_merge(
+                $this->binary(),
+                $this->baseArgs,
+                $this->settingArgs($settings),
+                ['--format', 'JSONEachRow'],
+            ),
+            null,
+            null,
+            $sql,
+            (float) $this->config['timeout'],
+        );
+
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new ClickHouseException(
+                'clickhouse-client failed: '.$process->getErrorOutput(),
+                $process->getExitCode() ?? 1,
+            );
+        }
+
+        return $this->decodeRows($process->getOutput());
+    }
+
+    /**
+     * Stream a result set row by row without ever loading all of it into one
+     * PHP array.
+     *
+     * @param  callable(array<string, mixed>): void  $onRow
+     * @param  array<string, int|string>  $settings
+     */
+    public function streamRows(string $sql, callable $onRow, array $settings = []): void
+    {
+        $process = new Process(
+            array_merge(
+                $this->binary(),
+                $this->baseArgs,
+                $this->settingArgs($settings),
+                ['--format', 'JSONEachRow', '--query', $sql],
+            ),
+            null,
+            null,
+            null,
+            (float) $this->config['timeout'],
+        );
+
+        $buffer = '';
+        $errors = '';
+
+        $emit = function (string $line) use ($onRow): void {
+            $line = trim($line);
+
+            if ($line === '') {
+                return;
+            }
+
+            $row = json_decode($line, true);
+
+            if (! is_array($row)) {
+                throw new ClickHouseException('ClickHouse returned an unreadable row.');
+            }
+
+            $onRow($row);
+        };
+
+        try {
+            $process->run(function (string $type, string $chunk) use (&$buffer, &$errors, $emit): void {
+                if ($type === Process::ERR) {
+                    $errors .= $chunk;
+
+                    return;
+                }
+
+                $buffer .= $chunk;
+
+                while (($position = strpos($buffer, "\n")) !== false) {
+                    $line = substr($buffer, 0, $position);
+                    $buffer = substr($buffer, $position + 1);
+                    $emit($line);
+                }
+            });
+
+            $emit($buffer);
+        } catch (Throwable $exception) {
+            $process->stop(0);
+
+            throw $exception;
+        }
+
+        if (! $process->isSuccessful()) {
+            throw new ClickHouseException(
+                'clickhouse-client stream failed: '.$errors,
+                $process->getExitCode() ?? 1,
+            );
+        }
+    }
+
+    /**
+     * Insert a batch of rows with JSONEachRow. Batches are built by the
+     * caller so memory stays bounded while a run processes a large chunk.
+     *
+     * @param  array<int, array<string, mixed>>  $rows
+     */
+    public function insertJsonEachRow(string $table, array $rows): void
+    {
+        if ($rows === []) {
+            return;
+        }
+
+        $payload = '';
+
+        foreach ($rows as $row) {
+            $payload .= json_encode($row, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)."\n";
+        }
+
+        $process = new Process(
+            array_merge($this->binary(), $this->baseArgs, ['--query', 'INSERT INTO '.$table.' FORMAT JSONEachRow']),
+            null,
+            null,
+            $payload,
+            (float) $this->config['timeout'],
+        );
+
+        $process->run();
+
+        if (! $process->isSuccessful()) {
+            throw new ClickHouseException(
+                'clickhouse-client insert failed: '.$process->getErrorOutput(),
+                $process->getExitCode() ?? 1,
+            );
+        }
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function decodeRows(string $output): array
+    {
+        $output = trim($output);
+
+        if ($output === '') {
             return [];
         }
 
         $rows = [];
-        foreach (explode("\n", $out) as $line) {
+
+        foreach (explode("\n", $output) as $line) {
             $line = trim($line);
+
             if ($line === '') {
                 continue;
             }
+
             $decoded = json_decode($line, true);
+
             if (is_array($decoded)) {
                 $rows[] = $decoded;
             }
         }
 
         return $rows;
+    }
+
+    /**
+     * @param  array<string, int|string>  $settings
+     * @return array<int, string>
+     */
+    private function settingArgs(array $settings): array
+    {
+        $args = [];
+
+        foreach ($settings as $name => $value) {
+            $args[] = '--'.$name.'='.$value;
+        }
+
+        return $args;
     }
 
     /**

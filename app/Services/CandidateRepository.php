@@ -25,19 +25,19 @@ class CandidateRepository
      */
     public function forDate(string $date, int $limit = 500, bool $shortOnly = false): array
     {
-        $sql = sprintf(
-            'SELECT event_date, name, weaker_found, weaker_types, weaker_count, tld_count, is_short, score '
-            .'FROM %s.com_candidates WHERE event_date = {d:Date}',
-            $this->database,
+        $sql = $this->visibleCandidatesSql(
+            'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.is_short, c.score',
+            'c.event_date = {d:Date}'.($shortOnly ? ' AND c.is_short = 1' : ''),
+            'ORDER BY c.score DESC, c.name LIMIT {lim:UInt32}',
         );
 
-        if ($shortOnly) {
-            $sql .= ' AND is_short = 1';
-        }
-
-        $sql .= ' ORDER BY score DESC, name LIMIT {lim:UInt32}';
-
-        $rows = $this->clickhouse->rows($sql, ['d' => $date, 'lim' => $limit]);
+        $rows = $this->clickhouse->rows($sql, [
+            'd' => $date,
+            'from' => $date,
+            'tld' => 'com',
+            'event' => 'added',
+            'lim' => $limit,
+        ]);
 
         return $this->decorate($rows);
     }
@@ -48,13 +48,12 @@ class CandidateRepository
     public function forRange(string $from, string $to, int $limit = 1000): array
     {
         $rows = $this->clickhouse->rows(
-            sprintf(
-                'SELECT event_date, name, weaker_found, weaker_types, weaker_count, tld_count, is_short, score '
-                .'FROM %s.com_candidates WHERE event_date >= {from:Date} AND event_date <= {to:Date} '
-                .'ORDER BY event_date DESC, score DESC, name LIMIT {lim:UInt32}',
-                $this->database,
+            $this->visibleCandidatesSql(
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.is_short, c.score',
+                'c.event_date >= {from:Date} AND c.event_date <= {to:Date}',
+                'ORDER BY c.event_date DESC, c.score DESC, c.name LIMIT {lim:UInt32}',
             ),
-            ['from' => $from, 'to' => $to, 'lim' => $limit],
+            ['from' => $from, 'to' => $to, 'tld' => 'com', 'event' => 'added', 'lim' => $limit],
         );
 
         return $this->decorate($rows);
@@ -86,14 +85,20 @@ class CandidateRepository
         $from = now()->subDays((int) config('zones.retain_days', 45))->format('Y-m-d');
 
         $rows = $this->clickhouse->rows(
-            sprintf(
-                'SELECT event_date, name, weaker_found, weaker_types, weaker_count, tld_count, is_short, score '
-                .'FROM %s.com_candidates WHERE event_date >= {from:Date} '
-                .'AND (name = {exact:String} OR positionCaseInsensitive(name, {partial:String}) > 0) '
-                .'ORDER BY event_date DESC, score DESC, name LIMIT {lim:UInt32}',
-                $this->database,
+            $this->visibleCandidatesSql(
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.is_short, c.score',
+                'c.event_date >= {from:Date} '
+                .'AND (c.name = {exact:String} OR positionCaseInsensitive(c.name, {partial:String}) > 0)',
+                'ORDER BY c.event_date DESC, c.score DESC, c.name LIMIT {lim:UInt32}',
             ),
-            ['from' => $from, 'exact' => $term, 'partial' => $term, 'lim' => $limit],
+            [
+                'from' => $from,
+                'exact' => $term,
+                'partial' => $term,
+                'tld' => 'com',
+                'event' => 'added',
+                'lim' => $limit,
+            ],
         );
 
         return $this->decorate($rows);
@@ -190,8 +195,12 @@ class CandidateRepository
         }
 
         $candidateRows = $this->clickhouse->rows(
-            sprintf('SELECT count() AS total FROM %s.com_candidates WHERE event_date = {d:Date}', $this->database),
-            ['d' => $date],
+            $this->visibleCandidatesSql(
+                'SELECT count() AS total',
+                'c.event_date = {d:Date}',
+                '',
+            ),
+            ['d' => $date, 'from' => $date, 'tld' => 'com', 'event' => 'added'],
         );
 
         $counts['candidates'] = (int) ($candidateRows[0]['total'] ?? 0);
@@ -242,6 +251,25 @@ class CandidateRepository
         }
 
         return $dates;
+    }
+
+    /**
+     * A candidate disappears once the same .com name is added again. The
+     * join runs in ClickHouse so the limit still applies to visible rows.
+     */
+    private function visibleCandidatesSql(string $select, string $where, string $tail): string
+    {
+        return $select
+            .' FROM '.$this->database.'.com_candidates AS c '
+            .'LEFT JOIN ('
+            .'SELECT name, max(event_date) AS added_on FROM '.$this->database.'.zone_events '
+            .'WHERE tld = {tld:String} AND event = {event:String} AND event_date >= {from:Date} '
+            .'GROUP BY name'
+            .') AS restored ON restored.name = c.name '
+            .'WHERE '.$where
+            .' AND (restored.added_on IS NULL OR restored.added_on < c.event_date) '
+            .$tail
+            .' SETTINGS join_use_nulls = 1';
     }
 
     /**

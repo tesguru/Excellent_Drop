@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Jobs\BuildComCandidates;
+use App\Models\JobRun;
 use App\Services\CandidateRepository;
 use App\Services\Candidates\OwnerIndependence;
 use App\Services\Candidates\Scorer;
@@ -220,6 +221,169 @@ class PipelineTest extends TestCase
 
         $this->assertNotContains('acmefoo.net', $candidate['weaker_found']);
         $this->assertNotContains('fooacme.net', $candidate['weaker_found']);
+    }
+
+    public function test_a_restored_name_is_not_searched(): void
+    {
+        $today = now()->format('Y-m-d');
+        $yesterday = now()->subDay()->format('Y-m-d');
+
+        $loader = new ZoneLoader($this->clickhouse, self::DATABASE);
+
+        $loader->load('com', $this->namesFile(['acmeplumbing']), $yesterday);
+        $loader->load('com', $this->namesFile([]), $today);
+        $loader->load('net', $this->namesFile(['acme-plumbing']), $today);
+
+        (new ZoneDiffer($this->clickhouse, self::DATABASE))->diff('com', $today, $yesterday);
+
+        // The name reappears in the .com snapshot after the diff ran.
+        $loader->load('com', $this->namesFile(['acmeplumbing']), $today);
+
+        $this->buildCandidates();
+
+        $count = (int) $this->clickhouse->scalar(
+            'SELECT count() FROM '.self::DATABASE.'.com_candidates WHERE name = {n:String}',
+            ['n' => 'acmeplumbing'],
+        );
+
+        $this->assertSame(0, $count);
+    }
+
+    public function test_candidates_from_older_days_are_not_deleted(): void
+    {
+        $today = now()->format('Y-m-d');
+        $yesterday = now()->subDay()->format('Y-m-d');
+
+        $this->clickhouse->insertJsonEachRow(self::DATABASE.'.com_candidates', [[
+            'event_date' => $yesterday,
+            'name' => 'oldcandidate',
+            'weaker_found' => ['oldcandidate.net'],
+            'weaker_types' => ['other_tld'],
+            'weaker_count' => 1,
+            'tld_count' => 1,
+            'is_short' => 0,
+            'score' => 10.0,
+        ]]);
+
+        $loader = new ZoneLoader($this->clickhouse, self::DATABASE);
+
+        $loader->load('com', $this->namesFile(['acmeplumbing']), $yesterday);
+        $loader->load('com', $this->namesFile([]), $today);
+        $loader->load('net', $this->namesFile(['acmeplumbing']), $today);
+
+        (new ZoneDiffer($this->clickhouse, self::DATABASE))->diff('com', $today, $yesterday);
+
+        $this->buildCandidates();
+
+        $rows = $this->clickhouse->rows(
+            'SELECT event_date, name FROM '.self::DATABASE.'.com_candidates ORDER BY event_date, name',
+        );
+
+        $this->assertSame([
+            ['event_date' => $yesterday, 'name' => 'oldcandidate'],
+            ['event_date' => $today, 'name' => 'acmeplumbing'],
+        ], $rows);
+    }
+
+    public function test_only_today_is_searched_and_chunk_progress_is_recorded(): void
+    {
+        config(['zones.weaker.chunk_size' => 2]);
+
+        $today = now()->format('Y-m-d');
+        $yesterday = now()->subDay()->format('Y-m-d');
+
+        $loader = new ZoneLoader($this->clickhouse, self::DATABASE);
+
+        $loader->load('com', $this->namesFile(['alpha', 'bravo', 'charlie']), $yesterday);
+        $loader->load('com', $this->namesFile([]), $today);
+        $loader->load('net', $this->namesFile(['alpha', 'bravo', 'charlie']), $today);
+
+        (new ZoneDiffer($this->clickhouse, self::DATABASE))->diff('com', $today, $yesterday);
+
+        $this->buildCandidates();
+
+        $candidates = (int) $this->clickhouse->scalar(
+            'SELECT count() FROM '.self::DATABASE.'.com_candidates WHERE event_date = {d:Date}',
+            ['d' => $today],
+        );
+
+        $this->assertSame(3, $candidates);
+
+        $run = JobRun::where('step', 'candidates')->latest('id')->firstOrFail();
+
+        $this->assertSame(JobRun::STATUS_SUCCESS, $run->status);
+        $this->assertSame(3, $run->rows);
+        $this->assertSame(3, $run->bytes_done);
+        $this->assertSame(3, $run->bytes_total);
+        $this->assertStringContainsString('2 chunk(s)', (string) $run->message);
+    }
+
+    public function test_an_older_removal_is_never_searched_again(): void
+    {
+        $today = now()->format('Y-m-d');
+        $yesterday = now()->subDay()->format('Y-m-d');
+
+        $this->clickhouse->insertJsonEachRow(self::DATABASE.'.zone_events', [[
+            'event_date' => $yesterday,
+            'tld' => 'com',
+            'name' => 'oldname',
+            'event' => 'removed',
+        ]]);
+
+        $loader = new ZoneLoader($this->clickhouse, self::DATABASE);
+        $loader->load('net', $this->namesFile(['oldname']), $today);
+
+        $this->buildCandidates();
+
+        $count = (int) $this->clickhouse->scalar(
+            'SELECT count() FROM '.self::DATABASE.'.com_candidates WHERE name = {n:String}',
+            ['n' => 'oldname'],
+        );
+
+        $this->assertSame(0, $count);
+    }
+
+    public function test_a_candidate_is_hidden_once_the_name_is_added_again(): void
+    {
+        $today = now()->format('Y-m-d');
+
+        $this->clickhouse->insertJsonEachRow(self::DATABASE.'.com_candidates', [
+            [
+                'event_date' => $today,
+                'name' => 'hiddenname',
+                'weaker_found' => ['hiddenname.net'],
+                'weaker_types' => ['other_tld'],
+                'weaker_count' => 1,
+                'tld_count' => 1,
+                'is_short' => 0,
+                'score' => 20.0,
+            ],
+            [
+                'event_date' => $today,
+                'name' => 'visiblename',
+                'weaker_found' => ['visiblename.net'],
+                'weaker_types' => ['other_tld'],
+                'weaker_count' => 1,
+                'tld_count' => 1,
+                'is_short' => 0,
+                'score' => 10.0,
+            ],
+        ]);
+
+        $this->clickhouse->insertJsonEachRow(self::DATABASE.'.zone_events', [[
+            'event_date' => $today,
+            'tld' => 'com',
+            'name' => 'hiddenname',
+            'event' => 'added',
+        ]]);
+
+        $repository = new CandidateRepository($this->clickhouse, self::DATABASE);
+
+        $rows = $repository->forDate($today);
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('visiblename', $rows[0]['name']);
+        $this->assertSame(1, $repository->countsForDate($today)['candidates']);
     }
 
     public function test_the_daily_list_shows_the_names_that_were_removed(): void

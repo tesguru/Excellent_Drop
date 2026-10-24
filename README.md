@@ -65,8 +65,8 @@ php artisan zones:ch-migrate
 # Create the single dashboard user:
 php artisan dropwatch:user owner@example.com
 
-# The worker and the scheduler:
-php artisan queue:work --queue=zones
+# The worker and the scheduler (one zones worker only):
+php artisan queue:work --connection=zones --queue=zones
 php artisan schedule:work
 ```
 
@@ -123,12 +123,24 @@ light in the header shows, so a stopped worker is visible at a glance.
 The staleness guard can be tuned with `ZONE_STALE_AFTER_HOURS` (20),
 `ZONE_STALE_RETRY_MINUTES` (30) and `ZONE_STALE_MAX_RETRIES` (4). The Zones page
 shows the `Last-Modified` date of the file that was actually downloaded, so a
-stale snapshot is never mistaken for a fresh one. Waiting can keep the job busy
-for up to two hours, so the queue's `DB_QUEUE_RETRY_AFTER` is set to `10800`
-(three hours) to stop the database queue re-delivering a job that is still
-sleeping.
+stale snapshot is never mistaken for a fresh one.
 
-The queue worker itself is a supervisor program, see
+Zone steps use their own `zones` queue connection with
+`ZONES_QUEUE_RETRY_AFTER` set to 86400 seconds. Waiting for a fresh file and
+then diffing a full `.com` snapshot can keep a job busy for hours, so the
+retry window has to stay above the longest step. Run exactly one zones worker
+(the supervisor config does), otherwise two workers can overlap.
+
+### Candidate processing
+
+The candidate step streams only the `.com` names removed today in chunks of
+5,000. Each chunk is filtered against today's `.com` snapshot so a restored
+name is skipped, and the weaker-version search runs one batched ClickHouse
+query per rule for the whole chunk. Candidates are inserted in batches of
+1,000, progress and chunk duration are written to `job_runs`, and a rerun
+replaces only today's rows.
+
+The queue workers are supervisor programs, see
 `deploy/supervisor/dropwatch-worker.conf`.
 
 ## Naming and statuses

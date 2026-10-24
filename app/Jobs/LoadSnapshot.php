@@ -32,6 +32,7 @@ class LoadSnapshot implements ShouldQueue
         public readonly string $tld,
     ) {
         $this->onQueue((string) config('zones.queue'));
+        $this->onConnection('zones');
     }
 
     public function runIdentifier(): string
