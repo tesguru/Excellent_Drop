@@ -73,7 +73,7 @@ php artisan zones:ch-migrate
 php artisan dropwatch:user owner@example.com
 
 # The worker and the scheduler (one zones worker only):
-php artisan queue:work --connection=zones --queue=zones
+php artisan queue:work zones --queue=zones
 php artisan schedule:work
 ```
 
