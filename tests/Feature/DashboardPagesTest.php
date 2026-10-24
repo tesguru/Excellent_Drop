@@ -5,8 +5,10 @@ namespace Tests\Feature;
 use App\Models\JobRun;
 use App\Models\User;
 use App\Services\CandidateRepository;
+use App\Services\Zone\ZoneSearch;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Fakes\FakeCandidateRepository;
+use Tests\Fakes\FakeZoneSearch;
 use Tests\TestCase;
 
 class DashboardPagesTest extends TestCase
@@ -51,6 +53,28 @@ class DashboardPagesTest extends TestCase
             removed: ['anothername'],
             added: ['newname'],
         ));
+
+        $this->app->instance(ZoneSearch::class, new FakeZoneSearch(payload: [
+            'results' => [
+                [
+                    'domain' => 'acmeplumbing.com',
+                    'tld' => 'com',
+                    'name' => 'acmeplumbing',
+                    'removed_on' => now()->subDay()->format('Y-m-d'),
+                    'added_on' => null,
+                    'lookup_url' => 'https://rdap.org/domain/acmeplumbing.com',
+                ],
+                [
+                    'domain' => 'acmeplumbing.net',
+                    'tld' => 'net',
+                    'name' => 'acmeplumbing',
+                    'removed_on' => null,
+                    'added_on' => now()->subDay()->format('Y-m-d'),
+                    'lookup_url' => 'https://rdap.org/domain/acmeplumbing.net',
+                ],
+            ],
+            'latest' => now()->format('Y-m-d'),
+        ]));
 
         $this->actingAs(User::create([
             'name' => 'Owner',
@@ -134,7 +158,35 @@ class DashboardPagesTest extends TestCase
 
     public function test_the_search_page_shows_the_results(): void
     {
-        $this->get('/search?q=acmeplumbing')->assertOk()->assertSee('acmeplumbing.com');
+        $this->get('/search?q=acmeplumbing')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com')
+            ->assertSee('acmeplumbing.net')
+            ->assertSee('Removed '.now()->subDay()->format('Y-m-d'))
+            ->assertSee('Added '.now()->subDay()->format('Y-m-d'))
+            ->assertSee('latest snapshot')
+            ->assertSee('Hide digits')
+            ->assertSee('Hide hyphens');
+
+        $this->getJson('/api/search?q=acmeplumbing&mode=ends&tld[]=com&min_length=3')
+            ->assertOk()
+            ->assertJsonPath('query', 'acmeplumbing')
+            ->assertJsonPath('mode', 'ends')
+            ->assertJsonPath('tlds', ['com'])
+            ->assertJsonPath('min_length', 3)
+            ->assertJsonCount(2, 'results');
+    }
+
+    public function test_the_search_page_shows_a_too_broad_error(): void
+    {
+        $this->app->instance(ZoneSearch::class, new FakeZoneSearch(payload: [
+            'error' => 'The search is too broad. Add a TLD, more characters or a length filter.',
+        ]));
+
+        $this->get('/search?q=acme')
+            ->assertOk()
+            ->assertSee('too broad')
+            ->assertDontSee('Zone results');
     }
 
     public function test_the_jobs_pages_render(): void

@@ -104,12 +104,25 @@ Fill in `CZDS_USERNAME` and `CZDS_PASSWORD` in `.env` before the first run.
 | --- | --- |
 | Overview | Names removed, added and the candidates for today, the worker heartbeat, the last run and the zone access that expires soon |
 | Daily list | Everything that left the `.com` zone on a chosen day, the names that came back and the candidates of that day |
-| Search | A dropped name and its weaker versions over the retention window |
+| Search | Names across every TLD in the latest zone snapshot, with Contains, Starts with, Ends with and Exact modes |
 | Watchlist | Domains to keep an eye on, with a status and notes |
 | Jobs | Every step of every run with its status, duration and row counts |
 | Zones | The zones the account has access to, when the access expires and whether a snapshot was loaded |
 
 Every page has a JSON endpoint under `/api` that returns the same data.
+
+### Search
+
+The Search page reads the latest `zone_names` snapshot across every loaded
+TLD. The modes are Contains, Starts with, Ends with (through `name_rev`) and
+Exact; the filters cover one or more TLDs, minimum and maximum name length,
+digits and hyphens. Every value is passed as a ClickHouse query parameter and
+no query uses `LIKE`, so `%` and `_` are literal characters.
+
+Contains needs at least three characters. A query is stopped after 20 seconds
+and reported as "too broad", results are capped at 100 per page and 5,000 in
+total, and typing debounces for 400ms. Each result shows whether the name was
+removed or added in the last 45 days.
 
 ## Scheduling
 

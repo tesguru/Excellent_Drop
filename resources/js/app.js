@@ -194,4 +194,62 @@
             }
         });
     });
+
+    // Zone search ------------------------------------------------------------
+    const zoneSearchForm = document.getElementById('zone-search-form');
+    const zoneResults = document.querySelector('[data-search-results]');
+
+    if (zoneSearchForm && zoneResults) {
+        let timer;
+        let latestRequest = 0;
+
+        const swapResults = async function () {
+            const params = new URLSearchParams(new FormData(zoneSearchForm));
+            const url = '/search?' + params.toString();
+            const requestId = ++latestRequest;
+
+            zoneResults.classList.add('opacity-60');
+
+            try {
+                const response = await fetch(url, {
+                    headers: { Accept: 'text/html', 'X-Requested-With': 'XMLHttpRequest' },
+                    credentials: 'same-origin',
+                });
+
+                if (!response.ok) {
+                    throw new Error('Search failed (' + response.status + ')');
+                }
+
+                const html = await response.text();
+                const doc = new DOMParser().parseFromString(html, 'text/html');
+                const fresh = doc.querySelector('[data-search-results]');
+
+                if (fresh && requestId === latestRequest) {
+                    zoneResults.innerHTML = fresh.innerHTML;
+                    window.history.replaceState(null, '', url);
+                }
+            } catch (error) {
+                window.console.error(error);
+            } finally {
+                if (requestId === latestRequest) {
+                    zoneResults.classList.remove('opacity-60');
+                }
+            }
+        };
+
+        zoneSearchForm.querySelector('#q')?.addEventListener('input', function () {
+            window.clearTimeout(timer);
+            timer = window.setTimeout(swapResults, 400);
+        });
+
+        zoneSearchForm.querySelectorAll('select, input[type="number"], input[type="checkbox"]').forEach(function (field) {
+            field.addEventListener('change', swapResults);
+        });
+
+        zoneSearchForm.addEventListener('submit', function (event) {
+            event.preventDefault();
+            window.clearTimeout(timer);
+            swapResults();
+        });
+    }
 })();

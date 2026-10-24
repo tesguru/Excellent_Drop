@@ -119,14 +119,22 @@ and a “2+ endings” filter.
 ## Search
 
 `/search` queries `zone_names` in the latest snapshot for every TLD with
-Contains, Starts with, Ends with and Exact modes, plus TLD, length, digit and
-hyphen filters. Queries are parameterised; `%` and `_` are escaped. Contains
-requires at least three characters, runs with a 20 second timeout and reports
-“too broad” instead of hanging. Results are limited to 100 per page with a
-hard cap of 5,000 and the search input debounces for 400ms.
+Contains, Starts with, Ends with and Exact modes, plus TLD (multi-select),
+minimum and maximum length, hide digits and hide hyphens filters.
 
-Every result shows whether the name was removed or added in the last 45 days
-and links to RDAP.
+Every value is passed to ClickHouse as a query parameter and no statement uses
+`LIKE`, so `%` and `_` are always literal characters. Contains uses
+`positionCaseInsensitive`, Starts with uses `startsWith`, Exact uses equality
+and Ends with uses `startsWith` on the reversed `name_rev` column.
+
+Contains requires at least three characters. The query runs with a 20 second
+timeout and reports “too broad” instead of hanging. Results are limited to 100
+per page with a hard cap of 5,000 (50 pages), and the search input debounces
+for 400ms before it requests `/search` again.
+
+Each result shows the latest snapshot date and whether the name was removed or
+added in the last 45 days. The JSON form is available at `/api/search` with
+the same filters.
 
 ## Schedule and retention
 
