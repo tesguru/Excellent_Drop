@@ -9,10 +9,7 @@ use App\Services\Candidates\Scorer;
 use App\Services\Candidates\WeakerSearcher;
 use App\Services\ClickHouse\ClickHouseClient;
 use App\Services\Czds\CzdsClient;
-use App\Services\Rdap\RdapBootstrap;
-use App\Services\Rdap\RdapClient;
 use App\Services\Text\Dictionary;
-use App\Services\Weaker\WeakerSiteChecker;
 use App\Services\Zone\ZoneDiffer;
 use App\Services\Zone\ZoneExtractor;
 use App\Services\Zone\ZoneLoader;
@@ -66,17 +63,6 @@ class AppServiceProvider extends ServiceProvider
         ));
 
         $this->app->singleton(OwnerIndependence::class, fn () => new OwnerIndependence);
-
-        $this->app->singleton(WeakerSiteChecker::class, fn () => new WeakerSiteChecker);
-
-        $this->app->singleton(RdapBootstrap::class, fn () => new RdapBootstrap(
-            config('zones.rdap'),
-        ));
-
-        $this->app->singleton(RdapClient::class, fn ($app) => new RdapClient(
-            config('zones.rdap'),
-            $app->make(RdapBootstrap::class),
-        ));
 
         $this->app->singleton(CandidateRepository::class, fn ($app) => new CandidateRepository(
             $app->make(ClickHouseClient::class),

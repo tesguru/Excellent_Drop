@@ -27,8 +27,13 @@ class LoadSnapshotDispatchTest extends TestCase
 
         config(['zones.dir' => $dir]);
 
+        // The dispatch contract is what this test covers; loading is exercised
+        // by the ClickHouse integration suite.
+        $this->mock(ZoneLoader::class, function ($mock): void {
+            $mock->shouldReceive('load')->andReturn(1);
+        });
+
         $runId = (string) Str::uuid();
-        $today = now()->format('Y-m-d');
 
         foreach (['com', 'net'] as $tld) {
             ZoneTld::create([
@@ -39,7 +44,7 @@ class LoadSnapshotDispatchTest extends TestCase
 
             file_put_contents(
                 (new ZonePaths)->namesFile($tld),
-                "name\n".$tld."example\n"
+                $tld."example\t\n"
             );
         }
 

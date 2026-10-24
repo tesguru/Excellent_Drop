@@ -142,8 +142,7 @@ class WatchlistController extends Controller
                 'score' => $candidate['score'],
                 'weaker_found' => $candidate['weaker_found'],
                 'weaker_types' => $candidate['weaker_types'],
-                'rdap_status' => $candidate['rdap_status'],
-                'predicted_drop_date' => $candidate['predicted_drop_date'],
+                'estimated_drop_date' => $candidate['estimated_drop_date'],
             ],
         ];
     }

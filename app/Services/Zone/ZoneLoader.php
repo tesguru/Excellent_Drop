@@ -12,7 +12,7 @@ class ZoneLoader
     ) {}
 
     /**
-     * Load a sorted names file into the snapshot table.
+     * Load a names file (`name<TAB>nameservers`) into the snapshot table.
      *
      * The file is streamed into clickhouse-client, so a multi gigabyte list
      * of names never passes through PHP.
@@ -30,9 +30,9 @@ class ZoneLoader
         }
 
         $sql = sprintf(
-            'INSERT INTO %s.zone_names (snapshot_date, tld, name, name_rev) '
-            .'SELECT {d:Date}, {tld:String}, name, reverse(name) '
-            ."FROM input('name String') FORMAT TSV",
+            'INSERT INTO %s.zone_names (snapshot_date, tld, name, name_rev, ns) '
+            .'SELECT {d:Date}, {tld:String}, name, reverse(name), ns '
+            ."FROM input('name String, ns String') FORMAT TSV",
             $this->database,
         );
 

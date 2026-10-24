@@ -7,9 +7,9 @@ use App\Services\Text\Dictionary;
 /**
  * Scores a candidate. Higher is better.
  *
- * The ranking follows the strategy order: a weaker version with a live
- * contact page first, then the number of weaker versions, then how close
- * the weaker versions are, then independent owners, then name quality.
+ * The ranking follows the strategy order: the number of weaker versions,
+ * then how close the weaker versions are, then independent owners, then name
+ * quality.
  */
 class Scorer
 {
@@ -17,8 +17,6 @@ class Scorer
      * Weight of every scoring component.
      */
     public const WEIGHTS = [
-        'live_contact' => 120.0,
-        'live_site' => 45.0,
         'weaker_count' => 6.0,
         'closeness' => -2.0,
         'tld_count' => 12.0,
@@ -49,7 +47,6 @@ class Scorer
     /**
      * @param  array<int, string>  $weakerFound  full domains
      * @param  array<int, string>  $weakerTypes  signal per weaker version, parallel to $weakerFound
-     * @param  array<string, array{http_status:int|null, has_contact_page:bool}>  $siteChecks
      * @param  array{independent:bool, same_owner:bool, known:bool}  $ownership
      * @return array{score:float, breakdown:array<string, float>, brand_risk:bool, tld_count:int}
      */
@@ -57,35 +54,10 @@ class Scorer
         string $name,
         array $weakerFound,
         array $weakerTypes,
-        array $siteChecks,
         array $ownership,
         int $tldCount,
     ): array {
         $breakdown = [];
-
-        $liveContact = false;
-        $liveSite = false;
-
-        foreach ($weakerFound as $domain) {
-            $check = $siteChecks[$domain] ?? null;
-
-            if ($check === null) {
-                continue;
-            }
-
-            $status = (int) ($check['http_status'] ?? 0);
-
-            if ($status >= 200 && $status < 400) {
-                $liveSite = true;
-
-                if ($check['has_contact_page'] ?? false) {
-                    $liveContact = true;
-                }
-            }
-        }
-
-        $breakdown['live_contact'] = $liveContact ? self::WEIGHTS['live_contact'] : 0.0;
-        $breakdown['live_site'] = ! $liveContact && $liveSite ? self::WEIGHTS['live_site'] : 0.0;
 
         $count = count($weakerFound);
         $breakdown['weaker_count'] = min($count, self::MAX_COUNTED_WEAKER) * self::WEIGHTS['weaker_count'];

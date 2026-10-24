@@ -7,8 +7,8 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 
 /**
- * Extracts the sorted, unique list of second level labels from a gzipped
- * CZDS zone file.
+ * Extracts the sorted, unique list of second level labels and their
+ * delegation nameservers from a gzipped CZDS zone file.
  *
  * The zone file is never read into PHP memory. The work is done by a shell
  * pipeline of `zcat | awk | sort`, driven through Symfony Process.
@@ -16,9 +16,9 @@ use Symfony\Component\Process\Process;
 class ZoneExtractor
 {
     /**
-     * awk program that keeps the owner name of NS records and drops the
-     * trailing dot, the TLD, the zone apex and any name that has more than
-     * one label in front of the TLD.
+     * awk program that keeps the owner name and target of NS records and
+     * drops the trailing dot, the TLD, the zone apex and any name that has
+     * more than one label in front of the TLD.
      */
     private const AWK_PROGRAM = <<<'AWK'
 BEGIN { FS = "[ \t]+" }
@@ -28,6 +28,7 @@ BEGIN { FS = "[ \t]+" }
         if (toupper($i) == "NS") { ns_index = i; break }
     }
     if (ns_index == 0) next
+    if (ns_index >= NF) next
 
     owner = $1
     sub(/\.$/, "", owner)
@@ -42,8 +43,30 @@ BEGIN { FS = "[ \t]+" }
     if (index(label, ".") > 0) next
     if (index(label, "\\") > 0) next
 
-    print tolower(label)
+    target = $(ns_index + 1)
+    sub(/\.$/, "", target)
+    if (target == "") next
+    if (index(target, "\\") > 0) next
+
+    print tolower(label) "\t" tolower(target)
 }
+AWK;
+
+    /**
+     * Fold the sorted label/nameserver pairs into one TSV row per label.
+     */
+    private const AGGREGATE_PROGRAM = <<<'AWK'
+BEGIN { FS = "\t" }
+{
+    if ($1 != prev) {
+        if (prev != "") print prev "\t" ns
+        prev = $1
+        ns = $2
+    } else if (index("," ns ",", "," $2 ",") == 0) {
+        ns = ns "," $2
+    }
+}
+END { if (prev != "") print prev "\t" ns }
 AWK;
 
     /**
@@ -70,12 +93,13 @@ AWK;
         $this->prepareTmpDir($tmpDir);
 
         $command = sprintf(
-            'set -o pipefail; %s %s | LC_ALL=C awk -v tld=%s %s | LC_ALL=C sort -u -k1,1 -T %s > %s',
+            'set -o pipefail; %s %s | LC_ALL=C awk -v tld=%s %s | LC_ALL=C sort -u -k1,1 -k2,2 -T %s | LC_ALL=C awk %s > %s',
             $this->catBinary(),
             escapeshellarg($gzPath),
             escapeshellarg($tld),
             escapeshellarg(self::AWK_PROGRAM),
             escapeshellarg($tmpDir),
+            escapeshellarg(self::AGGREGATE_PROGRAM),
             escapeshellarg($outPath),
         );
 

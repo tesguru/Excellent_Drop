@@ -59,7 +59,8 @@ class WeakerSearcher
      * @return array{
      *     weaker_found: array<int, string>,
      *     weaker_types: array<int, string>,
-     *     details: array<string, array{domain:string, tld:string, name:string, signals:array<int,string>, added_chars:int}>
+     *     details: array<string, array{domain:string, tld:string, name:string, signals:array<int,string>, added_chars:int}>,
+     *     nameservers: array<string, array<int, string>>
      * }
      */
     public function find(string $name, string $snapshotDate, array $tlds): array
@@ -90,8 +91,19 @@ class WeakerSearcher
                         'name' => $label,
                         'signals' => [],
                         'added_chars' => PHP_INT_MAX,
+                        'nameservers' => [],
                     ];
                 }
+
+                $ns = array_values(array_filter(array_map(
+                    'trim',
+                    preg_split('/[,\s]+/', (string) ($row['ns'] ?? '')) ?: [],
+                )));
+
+                $details[$domain]['nameservers'] = array_values(array_unique(array_merge(
+                    $details[$domain]['nameservers'],
+                    $ns,
+                )));
 
                 if (! in_array($signal, $details[$domain]['signals'], true)) {
                     $details[$domain]['signals'][] = $signal;
@@ -184,16 +196,19 @@ class WeakerSearcher
 
         $weakerFound = [];
         $weakerTypes = [];
+        $nameservers = [];
 
         foreach ($details as $domain => $detail) {
             $weakerFound[] = $domain;
             $weakerTypes[] = implode(',', $detail['signals']);
+            $nameservers[$domain] = $detail['nameservers'];
         }
 
         return [
             'weaker_found' => $weakerFound,
             'weaker_types' => $weakerTypes,
             'details' => $details,
+            'nameservers' => $nameservers,
         ];
     }
 
@@ -291,7 +306,7 @@ class WeakerSearcher
     private function queryByName(string $name, string $snapshotDate, array $tlds, ?string $excludeTld = null): array
     {
         $sql = sprintf(
-            'SELECT tld, name FROM %s.zone_names '
+            'SELECT tld, name, ns FROM %s.zone_names '
             .'WHERE snapshot_date = {d:Date} AND name = {n:String} AND tld IN ({tlds:Array(String)})',
             $this->database,
         );
@@ -324,7 +339,7 @@ class WeakerSearcher
         }
 
         $sql = sprintf(
-            'SELECT tld, name FROM %s.zone_names '
+            'SELECT tld, name, ns FROM %s.zone_names '
             .'WHERE snapshot_date = {d:Date} AND name IN ({names:Array(String)}) AND tld IN ({tlds:Array(String)}) '
             .'ORDER BY name, tld LIMIT 500',
             $this->database,
@@ -344,7 +359,7 @@ class WeakerSearcher
     private function queryStartsWith(string $name, string $snapshotDate, array $tlds, int $limit, ?int $maxAdded = null): array
     {
         $sql = sprintf(
-            'SELECT tld, name FROM %s.zone_names '
+            'SELECT tld, name, ns FROM %s.zone_names '
             .'WHERE snapshot_date = {d:Date} AND startsWith(name, {n:String}) AND name != {n:String} '
             .'AND tld IN ({tlds:Array(String)})',
             $this->database,
@@ -374,7 +389,7 @@ class WeakerSearcher
     private function queryEndsWith(string $name, string $snapshotDate, array $tlds, int $limit, ?int $maxAdded = null): array
     {
         $sql = sprintf(
-            'SELECT tld, name FROM %s.zone_names '
+            'SELECT tld, name, ns FROM %s.zone_names '
             .'WHERE snapshot_date = {d:Date} AND startsWith(name_rev, {rev:String}) AND name != {n:String} '
             .'AND tld IN ({tlds:Array(String)})',
             $this->database,
@@ -405,7 +420,7 @@ class WeakerSearcher
     private function queryContains(string $name, string $snapshotDate, array $tlds, int $limit): array
     {
         $sql = sprintf(
-            'SELECT tld, name FROM %s.zone_names '
+            'SELECT tld, name, ns FROM %s.zone_names '
             .'WHERE snapshot_date = {d:Date} AND positionCaseInsensitive(name, {n:String}) > 0 AND name != {n:String} '
             .'AND tld IN ({tlds:Array(String)}) ORDER BY name, tld LIMIT {lim:UInt32}',
             $this->database,

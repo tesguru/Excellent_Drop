@@ -9,7 +9,7 @@ use Illuminate\Support\Str;
 class RunStep extends Command
 {
     protected $signature = 'zones:step
-        {step : One of download, extract, load, diff, candidates, rdap, cleanup}
+        {step : One of download, extract, load, diff, candidates, cleanup}
         {--tld= : Limit the step to a single TLD}
         {--run= : Reuse an existing run id}';
 

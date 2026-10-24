@@ -49,6 +49,7 @@
                                    class="font-mono text-sm font-semibold hover:underline" style="color: var(--text)">
                                     {{ $candidate['domain'] }}
                                 </a>
+                                @include('partials.lookup-link', ['domain' => $candidate['domain']])
                                 <span class="chip bg-gradient-to-br from-sky-400 to-cyan-500 font-bold text-[color:var(--accent-ink)]">
                                     {{ number_format((float) $candidate['score'], 1) }}
                                 </span>
@@ -58,37 +59,16 @@
                                         short
                                     </span>
                                 @endif
-                                @if (! empty($candidate['restored']))
-                                    <span class="chip" style="background: rgb(16 185 129 / 0.15); color: rgb(52 211 153)">
-                                        restored
-                                    </span>
-                                @endif
                             </div>
                             <p class="mt-1.5 text-xs muted">
                                 Removed {{ $candidate['event_date'] }}
-                                @if (! empty($candidate['predicted_drop_date']))
-                                    &middot; predicted drop {{ $candidate['predicted_drop_date'] }}
+                                @if (! empty($candidate['estimated_drop_date']))
+                                    &middot; estimated drop {{ $candidate['estimated_drop_date'] }}
                                 @endif
                             </p>
                         </div>
 
                         <div class="flex items-center gap-2">
-                            @php
-                                $status = strtolower((string) ($candidate['rdap_status'] ?? ''));
-                                $statusStyle = match (true) {
-                                    $status === 'pending delete' => 'background: rgb(244 63 94 / 0.15); color: rgb(251 113 133)',
-                                    $status === 'redemption period', $status === 'hold' => 'background: rgb(245 158 11 / 0.15); color: rgb(251 191 36)',
-                                    $status === 'active' => 'background: rgb(16 185 129 / 0.15); color: rgb(52 211 153)',
-                                    default => null,
-                                };
-                            @endphp
-
-                            @if ($statusStyle !== null)
-                                <span class="chip" style="{{ $statusStyle }}">{{ $candidate['rdap_status'] }}</span>
-                            @else
-                                <span class="chip muted" style="background: var(--surface-2)">RDAP unknown</span>
-                            @endif
-
                             @php $watching = ! empty($candidate['watchlisted']); @endphp
                             <button type="button"
                                     class="watch-toggle chip border px-2.5 py-1 transition {{ $watching ? 'border-transparent' : 'border-[color:var(--border)] muted hover:text-[color:var(--text)]' }}"
@@ -106,6 +86,7 @@
                                 <li class="rounded-lg border px-2.5 py-1 font-mono text-xs"
                                     style="border-color: var(--border); background: var(--surface-2)">
                                     {{ $domain }}
+                                    @include('partials.lookup-link', ['domain' => $domain])
                                     @php
                                         $signals = array_filter(explode(',', (string) ($candidate['weaker_types'][$index] ?? '')));
                                     @endphp

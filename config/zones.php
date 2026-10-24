@@ -86,18 +86,15 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | RDAP
+    | External domain lookup
     |--------------------------------------------------------------------------
+    |
+    | DropWatch never fetches RDAP itself. These links are rendered for a
+    | human to open in a new tab; {domain} is replaced with the encoded name.
+    |
     */
 
-    'rdap' => [
-        'bootstrap_url' => env('RDAP_BOOTSTRAP_URL', 'https://data.iana.org/rdap/dns.json'),
-        'cache_hours' => (int) env('RDAP_CACHE_HOURS', 24),
-        'min_interval_ms' => (int) env('RDAP_MIN_INTERVAL_MS', 1000),
-        'max_interval_ms' => (int) env('RDAP_MAX_INTERVAL_MS', 5000),
-        'timeout' => (int) env('RDAP_TIMEOUT', 20),
-        'bootstrap_ttl' => (int) env('RDAP_BOOTSTRAP_TTL', 86400),
-    ],
+    'lookup_link_template' => env('LOOKUP_LINK_TEMPLATE', 'https://rdap.org/domain/{domain}'),
 
     /*
     |--------------------------------------------------------------------------
@@ -107,7 +104,6 @@ return [
 
     'weaker' => [
         'max_per_rule' => (int) env('WEAKER_MAX_PER_RULE', 50),
-        'max_site_checks' => (int) env('WEAKER_MAX_SITE_CHECKS', 8),
         'phase2_enabled' => (bool) env('WEAKER_PHASE2_ENABLED', false),
     ],
 

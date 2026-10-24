@@ -52,7 +52,10 @@
                     <ul class="flex flex-wrap gap-2">
                         @foreach ($data['removed_names'] as $name)
                             <li class="rounded-lg px-2 py-1 font-mono text-xs"
-                                style="background: rgb(244 63 94 / 0.12); color: rgb(251 113 133)">{{ $name }}</li>
+                                style="background: rgb(244 63 94 / 0.12); color: rgb(251 113 133)">
+                                {{ $name }}.com
+                                @include('partials.lookup-link', ['domain' => $name.'.com'])
+                            </li>
                         @endforeach
                     </ul>
                 @endif
@@ -71,7 +74,10 @@
                     <ul class="flex flex-wrap gap-2">
                         @foreach ($data['added_names'] as $name)
                             <li class="rounded-lg px-2 py-1 font-mono text-xs"
-                                style="background: rgb(16 185 129 / 0.13); color: rgb(52 211 153)">{{ $name }}</li>
+                                style="background: rgb(16 185 129 / 0.13); color: rgb(52 211 153)">
+                                {{ $name }}.com
+                                @include('partials.lookup-link', ['domain' => $name.'.com'])
+                            </li>
                         @endforeach
                     </ul>
                 @endif

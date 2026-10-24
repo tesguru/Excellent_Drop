@@ -48,15 +48,19 @@ class ZoneExtractorTest extends TestCase
 
         $result = $extractor->extract($gz, 'com', $out);
 
-        $names = array_map(
-            fn (string $line) => explode("\t", $line)[0],
-            array_filter(explode("\n", (string) file_get_contents($out))),
-        );
+        $rows = array_filter(explode("\n", (string) file_get_contents($out)));
 
-        sort($names);
+        $pairs = [];
+
+        foreach ($rows as $line) {
+            [$name, $nameservers] = explode("\t", $line);
+            $pairs[$name] = $nameservers;
+        }
 
         $this->assertSame(2, $result['rows']);
-        $this->assertSame(['acmeplumbing', 'xn--80ak6aa92e'], $names);
+        $this->assertSame(['acmeplumbing', 'xn--80ak6aa92e'], array_keys($pairs));
+        $this->assertSame('a.gtld-servers.net,b.gtld-servers.net', $pairs['acmeplumbing']);
+        $this->assertSame('ns6.example.com', $pairs['xn--80ak6aa92e']);
     }
 
     public function test_it_reports_the_layout_of_a_zone_file(): void

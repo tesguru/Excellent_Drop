@@ -29,10 +29,8 @@ class DashboardPagesTest extends TestCase
                     'tld_count' => 1,
                     'is_short' => false,
                     'score' => 91.5,
-                    'rdap_status' => 'redemption period',
-                    'predicted_drop_date' => now()->addDays(35)->format('Y-m-d'),
+                    'estimated_drop_date' => now()->addDays(35)->format('Y-m-d'),
                     'watchlisted' => false,
-                    'restored' => false,
                 ],
                 [
                     'event_date' => now()->format('Y-m-d'),
@@ -44,13 +42,11 @@ class DashboardPagesTest extends TestCase
                     'tld_count' => 1,
                     'is_short' => true,
                     'score' => 72.0,
-                    'rdap_status' => null,
-                    'predicted_drop_date' => null,
+                    'estimated_drop_date' => now()->addDays(35)->format('Y-m-d'),
                     'watchlisted' => false,
-                    'restored' => false,
                 ],
             ],
-            removed: ['acmeplumbing'],
+            removed: ['anothername'],
             added: ['newname'],
         ));
 
@@ -63,7 +59,14 @@ class DashboardPagesTest extends TestCase
 
     public function test_the_overview_shows_the_candidates(): void
     {
-        $this->get('/')->assertOk()->assertSee('acmeplumbing.com')->assertSee('acme-plumbing.net');
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com')
+            ->assertSee('acme-plumbing.net')
+            ->assertSee('estimated drop')
+            ->assertSee('rel="noopener noreferrer"', false)
+            ->assertSee('https://rdap.org/domain/acmeplumbing.com', false)
+            ->assertSee('https://rdap.org/domain/acme-plumbing.net', false);
     }
 
     public function test_the_daily_list_shows_the_removed_names(): void

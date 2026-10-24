@@ -5,8 +5,8 @@ weaker versions of those names on other zones. A name that leaves the zone is
 **never** reported as available: it is in redemption or pending delete, and
 DropWatch only says when it is predicted to become available again.
 
-The dashboard is private and single user. It is a plain Laravel application
-with Blade, vanilla JavaScript and the Tailwind CDN, so there is no build step.
+The dashboard is private and single user. It is a Laravel application with
+Blade, vanilla JavaScript and a Vite/Tailwind build.
 
 ## What it does
 
@@ -25,12 +25,25 @@ with Blade, vanilla JavaScript and the Tailwind CDN, so there is no build step.
    characters or fewer use a restricted rule set: prefix and suffix matches may
    only add one or two characters and at most 20 weaker versions are kept, so a
    short name cannot flood the candidate list.
-6. Scores every candidate and checks the RDAP status of the dropped name.
+6. Scores every candidate from the weaker versions and the nameserver data in
+   the zone snapshots. It never performs RDAP or website lookups.
 7. Cleans up old snapshots and raw files.
+
+## Network policy
+
+DropWatch makes exactly two kinds of HTTP calls:
+
+1. The CZDS downloader (`app/Services/Czds/CzdsClient.php`) talking to ICANN.
+2. The ClickHouse client (`app/Services/ClickHouse/ClickHouseClient.php`)
+   talking to the configured ClickHouse host.
+
+Everything else is local. RDAP links in the dashboard are rendered for a human
+to open; the application never fetches them, and there is no site checker, DNS
+lookup or IANA bootstrap request.
 
 ## Requirements
 
-* PHP 8.3 or newer with `pdo_pgsql`, `curl`, `mbstring` and `dns`
+* PHP 8.3 or newer with `pdo_pgsql`, `curl` and `mbstring`
 * PostgreSQL 14 or newer
 * ClickHouse 24 or newer with the `clickhouse-client` binary on the PATH
 * The GNU/BSD tools `gzip` (or `zcat`), `awk`, `sort` and `wc`
@@ -75,7 +88,7 @@ Fill in `CZDS_USERNAME` and `CZDS_PASSWORD` in `.env` before the first run.
 | Command | What it does |
 | --- | --- |
 | `php artisan zones:run` | Queue the full pipeline for a new run id |
-| `php artisan zones:step {step} [--tld=]` | Queue one step: `download`, `extract`, `load`, `diff`, `candidates`, `rdap` or `cleanup` |
+| `php artisan zones:step {step} [--tld=]` | Queue one step: `download`, `extract`, `load`, `diff`, `candidates` or `cleanup` |
 | `php artisan zones:retry` | Requeue the failed steps of the last runs |
 | `php artisan zones:clear-stuck` | Mark job runs that are stuck in `running` as failed |
 | `php artisan zones:ch-migrate` | Create or update the ClickHouse tables |
@@ -128,11 +141,11 @@ The queue worker itself is a supervisor program, see
   version at the same position, joined with commas (`other_tld`, `hyphen`,
   `starts_with`, `ends_with`, `plural`).
 * A name that left the zone is in redemption for about 30 days and in pending
-  delete for about 5 days. The predicted drop date is the removal date plus
-  those days, and it is corrected with the RDAP pending delete date when the
-  registry reports one.
-* `likely_same_owner` is only calculated from the live nameservers of the
-  weaker versions, never from the glue records in the zone file.
+  delete for about 5 days. The estimated drop date is the removal date plus
+  those days. It is an estimate, never a statement that the name is available.
+* Owner independence is calculated from the `ns` column of the zone
+  snapshots. Missing nameserver data is treated as unknown and never hides a
+  candidate.
 
 ## Optional files
 
@@ -147,6 +160,5 @@ The queue worker itself is a supervisor program, see
 | --- | --- |
 | `zcat: can't stat` | The zone file was removed by the cleanup job before the extraction ran, or `ZONES_DIR` points somewhere else. |
 | `Extraction for {tld} produced no names` | The zone file layout changed. Run `php artisan zones:step extract --tld=com` and inspect the file. |
-| `No RDAP server known for {tld}` | The IANA bootstrap file was parsed while it was unavailable. Clear the cache with `php artisan cache:clear`. |
 | The worker light is red | The queue worker is not running or the scheduler is not running. Check supervisor and the cron entry. |
 | `clickhouse-client failed` | The binary is not on the PATH of the PHP process. Set `CLICKHOUSE_CLIENT_BIN` to the full path. |

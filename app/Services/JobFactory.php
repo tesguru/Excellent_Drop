@@ -8,7 +8,6 @@ use App\Jobs\DiffZones;
 use App\Jobs\DownloadZones;
 use App\Jobs\ExtractNames;
 use App\Jobs\LoadSnapshot;
-use App\Jobs\RdapCheck;
 
 /**
  * Rebuilds a queued job from a job_runs row so a failed step can be retried.
@@ -21,7 +20,6 @@ class JobFactory
         'load',
         'diff',
         'candidates',
-        'rdap',
         'cleanup',
     ];
 
@@ -33,7 +31,6 @@ class JobFactory
             'load' => $tld !== null ? new LoadSnapshot($runId, $tld) : null,
             'diff' => new DiffZones($runId),
             'candidates' => new BuildComCandidates($runId),
-            'rdap' => new RdapCheck($runId),
             'cleanup' => new Cleanup($runId),
             default => null,
         };

@@ -2,20 +2,16 @@
 
 namespace App\Jobs;
 
-use App\Models\RdapStatus;
-use App\Models\WeakerCheck;
 use App\Services\Candidates\OwnerIndependence;
 use App\Services\Candidates\Scorer;
 use App\Services\Candidates\WeakerSearcher;
 use App\Services\ClickHouse\ClickHouseClient;
 use App\Services\TracksJobRun;
-use App\Services\Weaker\WeakerSiteChecker;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -48,7 +44,6 @@ class BuildComCandidates implements ShouldQueue
         WeakerSearcher $searcher,
         Scorer $scorer,
         OwnerIndependence $ownership,
-        WeakerSiteChecker $siteChecker,
     ): void {
         $this->beginRun('candidates', null);
 
@@ -73,7 +68,7 @@ class BuildComCandidates implements ShouldQueue
                     continue;
                 }
 
-                $candidate = $this->buildCandidate($name, $eventDate, $tlds, $searcher, $scorer, $ownership, $siteChecker);
+                $candidate = $this->buildCandidate($name, $eventDate, $tlds, $searcher, $scorer, $ownership);
 
                 if ($candidate !== null) {
                     $candidates[] = $candidate;
@@ -96,7 +91,7 @@ class BuildComCandidates implements ShouldQueue
             throw $exception;
         }
 
-        RdapCheck::dispatch($this->runId)->onQueue((string) config('zones.queue'));
+        Cleanup::dispatch($this->runId)->onQueue((string) config('zones.queue'));
     }
 
     /**
@@ -110,7 +105,6 @@ class BuildComCandidates implements ShouldQueue
         WeakerSearcher $searcher,
         Scorer $scorer,
         OwnerIndependence $ownership,
-        WeakerSiteChecker $siteChecker,
     ): ?array {
         $result = $searcher->find($name, $eventDate, $tlds);
 
@@ -118,10 +112,10 @@ class BuildComCandidates implements ShouldQueue
             return null;
         }
 
-        $siteChecks = $this->checkSites($result['weaker_found'], $siteChecker);
-        $nameservers = $this->nameservers($result['weaker_found'], $siteChecks);
-
-        $ownershipResult = $ownership->analyze($nameservers);
+        // Owner independence comes from the nameservers published in the
+        // zone snapshots. Missing data is unknown, never a reason to hide a
+        // candidate.
+        $ownershipResult = $ownership->analyze($result['nameservers']);
 
         $tldCount = count(array_unique(array_map(
             fn (string $domain) => substr($domain, strrpos($domain, '.') + 1),
@@ -132,12 +126,9 @@ class BuildComCandidates implements ShouldQueue
             $name,
             $result['weaker_found'],
             $result['weaker_types'],
-            $siteChecks,
             $ownershipResult,
             $tldCount,
         );
-
-        $this->rememberStatus($name, $eventDate);
 
         Log::info('Candidate built', [
             'name' => $name,
@@ -156,94 +147,6 @@ class BuildComCandidates implements ShouldQueue
             'is_short' => strlen($name) <= WeakerSearcher::SHORT_NAME_MAX_LENGTH,
             'score' => $scored['score'],
         ];
-    }
-
-    /**
-     * @param  array<int, string>  $domains
-     * @return array<string, array{http_status:int|null, has_contact_page:bool}>
-     */
-    private function checkSites(array $domains, WeakerSiteChecker $checker): array
-    {
-        $maxChecks = (int) config('zones.weaker.max_site_checks', 8);
-        $checks = [];
-
-        foreach (array_slice($domains, 0, $maxChecks) as $domain) {
-            $existing = WeakerCheck::where('domain', $domain)->first();
-
-            if ($existing !== null && $existing->checked_at !== null && $existing->checked_at->gt(now()->subDays(7))) {
-                $checks[$domain] = [
-                    'http_status' => $existing->http_status,
-                    'has_contact_page' => $existing->has_contact_page,
-                ];
-
-                continue;
-            }
-
-            $result = $checker->check($domain);
-
-            WeakerCheck::updateOrCreate(
-                ['domain' => $domain],
-                [
-                    'http_status' => $result['http_status'],
-                    'has_contact_page' => $result['has_contact_page'],
-                    'title' => $result['title'],
-                    'nameservers' => $result['nameservers'],
-                    'checked_at' => now(),
-                ],
-            );
-
-            $checks[$domain] = [
-                'http_status' => $result['http_status'],
-                'has_contact_page' => $result['has_contact_page'],
-            ];
-        }
-
-        return $checks;
-    }
-
-    /**
-     * @param  array<int, string>  $domains
-     * @param  array<string, array{http_status:int|null, has_contact_page:bool}>  $siteChecks
-     * @return array<string, array<int, string>>
-     */
-    private function nameservers(array $domains, array $siteChecks): array
-    {
-        $nameservers = [];
-
-        foreach ($domains as $domain) {
-            $check = WeakerCheck::where('domain', $domain)->first();
-
-            if ($check !== null && is_array($check->nameservers) && $check->nameservers !== []) {
-                $nameservers[$domain] = $check->nameservers;
-
-                continue;
-            }
-
-            $nameservers[$domain] = [];
-        }
-
-        return $nameservers;
-    }
-
-    private function rememberStatus(string $name, string $eventDate): void
-    {
-        $domain = $name.'.com';
-
-        $redemptionDays = (int) config('zones.drop.redemption_days', 30);
-        $pendingDeleteDays = (int) config('zones.drop.pending_delete_days', 5);
-
-        $predictedDrop = Carbon::parse($eventDate)
-            ->addDays($redemptionDays + $pendingDeleteDays)
-            ->format('Y-m-d');
-
-        $status = RdapStatus::firstOrNew(['domain' => $domain]);
-
-        $status->fill([
-            'status' => $status->status ?? 'removed',
-            'predicted_drop_date' => $status->predicted_drop_date ?? $predictedDrop,
-        ]);
-
-        $status->save();
     }
 
     /**

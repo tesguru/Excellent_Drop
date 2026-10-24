@@ -28,13 +28,16 @@
             <div class="card p-4" data-watch-entry data-domain="{{ $entry['domain'] }}">
                 <div class="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                        <p class="font-mono text-sm font-semibold">{{ $entry['domain'] }}</p>
+                        <p class="font-mono text-sm font-semibold">
+                            {{ $entry['domain'] }}
+                            @include('partials.lookup-link', ['domain' => $entry['domain']])
+                        </p>
                         <p class="mt-1.5 text-xs muted">
                             Added {{ $entry['created_at'] }}
                             @if ($entry['candidate'])
                                 &middot; score {{ number_format((float) $entry['candidate']['score'], 1) }}
-                                @if (! empty($entry['candidate']['predicted_drop_date']))
-                                    &middot; predicted drop {{ $entry['candidate']['predicted_drop_date'] }}
+                                @if (! empty($entry['candidate']['estimated_drop_date']))
+                                    &middot; estimated drop {{ $entry['candidate']['estimated_drop_date'] }}
                                 @endif
                             @endif
                         </p>
@@ -53,7 +56,10 @@
                 @if (! empty($entry['candidate']['weaker_found']))
                     <ul class="mt-3 flex flex-wrap gap-2">
                         @foreach ($entry['candidate']['weaker_found'] as $domain)
-                            <li class="rounded-lg px-2 py-1 font-mono text-xs" style="background: var(--surface-2)">{{ $domain }}</li>
+                            <li class="rounded-lg px-2 py-1 font-mono text-xs" style="background: var(--surface-2)">
+                                {{ $domain }}
+                                @include('partials.lookup-link', ['domain' => $domain])
+                            </li>
                         @endforeach
                     </ul>
                 @endif

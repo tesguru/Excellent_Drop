@@ -8,7 +8,6 @@ use App\Services\Candidates\OwnerIndependence;
 use App\Services\Candidates\Scorer;
 use App\Services\Candidates\WeakerSearcher;
 use App\Services\ClickHouse\ClickHouseClient;
-use App\Services\Weaker\WeakerSiteChecker;
 use App\Services\Zone\ZoneDiffer;
 use App\Services\Zone\ZoneLoader;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -47,28 +46,7 @@ class PipelineTest extends TestCase
         $this->applySchema();
         $this->truncate();
 
-        // The RDAP step must not reach the network from a test.
         Queue::fake();
-
-        // No network calls in the test.
-        $this->app->instance(WeakerSiteChecker::class, new class extends WeakerSiteChecker
-        {
-            public function check(string $domain): array
-            {
-                return [
-                    'http_status' => 200,
-                    'has_contact_page' => false,
-                    'title' => null,
-                    'nameservers' => [],
-                    'error' => null,
-                ];
-            }
-
-            public function nameservers(string $domain): array
-            {
-                return [];
-            }
-        });
     }
 
     public function test_a_removed_name_with_a_weaker_version_becomes_a_candidate(): void
@@ -269,7 +247,6 @@ class PipelineTest extends TestCase
             new WeakerSearcher($this->clickhouse, config('zones.weaker'), self::DATABASE),
             app(Scorer::class),
             app(OwnerIndependence::class),
-            app(WeakerSiteChecker::class),
         );
     }
 
@@ -280,7 +257,7 @@ class PipelineTest extends TestCase
     {
         $path = sys_get_temp_dir().'/dropwatch-pipeline-'.bin2hex(random_bytes(4)).'.tsv';
 
-        $lines = $names;
+        $lines = array_map(fn (string $name) => $name."\t", $names);
 
         file_put_contents($path, $lines === [] ? '' : implode("\n", $lines)."\n");
 

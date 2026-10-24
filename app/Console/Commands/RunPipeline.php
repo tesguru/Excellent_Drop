@@ -10,7 +10,7 @@ class RunPipeline extends Command
 {
     protected $signature = 'zones:run {--queue= : Queue to dispatch on}';
 
-    protected $description = 'Run the full zone pipeline (download, extract, load, diff, candidates, rdap, cleanup)';
+    protected $description = 'Run the full zone pipeline (download, extract, load, diff, candidates, cleanup)';
 
     public function handle(): int
     {

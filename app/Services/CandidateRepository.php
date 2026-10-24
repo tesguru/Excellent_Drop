@@ -2,15 +2,16 @@
 
 namespace App\Services;
 
-use App\Models\RdapStatus;
 use App\Models\Watchlist;
 use App\Services\ClickHouse\ClickHouseClient;
+use Illuminate\Support\Carbon;
 
 /**
  * Read side of the candidate data.
  *
- * The candidates live in ClickHouse, the RDAP status and the watchlist live
- * in Postgres, so every read is decorated with both.
+ * The candidates live in ClickHouse and the watchlist lives in Postgres, so
+ * every read is decorated with the watch flag and a locally calculated drop
+ * estimate.
  */
 class CandidateRepository
 {
@@ -244,7 +245,8 @@ class CandidateRepository
     }
 
     /**
-     * Add the RDAP status and the watchlist flag to the ClickHouse rows.
+     * Add the watchlist flag and the local drop estimate to the ClickHouse
+     * rows.
      *
      * @param  array<int, array<string, mixed>>  $rows
      * @return array<int, array<string, mixed>>
@@ -257,21 +259,22 @@ class CandidateRepository
 
         $domains = array_map(fn (array $row) => ((string) ($row['name'] ?? '')).'.com', $rows);
 
-        $statuses = RdapStatus::whereIn('domain', $domains)->get()->keyBy('domain');
         $watched = Watchlist::whereIn('domain', $domains)->pluck('domain')->flip();
+
+        $graceDays = (int) config('zones.drop.redemption_days', 30)
+            + (int) config('zones.drop.pending_delete_days', 5);
 
         foreach ($rows as $index => $row) {
             $domain = ((string) ($row['name'] ?? '')).'.com';
-            $status = $statuses->get($domain);
+            $eventDate = (string) ($row['event_date'] ?? '');
 
             $rows[$index]['domain'] = $domain;
             $rows[$index]['weaker_found'] = array_values((array) ($row['weaker_found'] ?? []));
             $rows[$index]['weaker_types'] = array_values((array) ($row['weaker_types'] ?? []));
             $rows[$index]['is_short'] = (bool) ($row['is_short'] ?? false);
-            $rows[$index]['rdap_status'] = $status?->status;
-            $rows[$index]['predicted_drop_date'] = $status?->predicted_drop_date?->format('Y-m-d');
-            $rows[$index]['rdap_checked_at'] = $status?->last_checked?->format('Y-m-d H:i');
-            $rows[$index]['restored'] = (bool) ($status?->restored ?? false);
+            $rows[$index]['estimated_drop_date'] = $eventDate === ''
+                ? null
+                : Carbon::parse($eventDate)->addDays($graceDays)->format('Y-m-d');
             $rows[$index]['watchlisted'] = $watched->has($domain);
         }
 

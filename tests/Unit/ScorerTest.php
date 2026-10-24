@@ -12,8 +12,8 @@ class ScorerTest extends TestCase
         $scorer = app(Scorer::class);
         $ownership = ['known' => false, 'independent' => false, 'same_owner' => false];
 
-        $short = $scorer->score('qzkv', [], [], [], $ownership, 0);
-        $medium = $scorer->score('qzkvw', [], [], [], $ownership, 0);
+        $short = $scorer->score('qzkv', [], [], $ownership, 0);
+        $medium = $scorer->score('qzkvw', [], [], $ownership, 0);
 
         $this->assertSame(24.0, $short['breakdown']['very_short']);
         $this->assertSame(0.0, $short['breakdown']['short_name']);
