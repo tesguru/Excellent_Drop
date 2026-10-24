@@ -298,17 +298,31 @@
         const domain = entry.getAttribute('data-domain');
 
         entry.querySelector('.watch-remove')?.addEventListener('click', async function () {
+            if (!window.confirm('Remove ' + domain + ' from the watchlist?')) {
+                return;
+            }
+
             try {
                 await request('DELETE', '/watchlist/' + encodeURIComponent(domain));
-                entry.remove();
+                say('Removed ' + domain + '.', false);
+                window.setTimeout(function () { window.location.reload(); }, 300);
             } catch (error) {
                 window.alert(error.message);
             }
         });
 
         entry.querySelector('.watch-status')?.addEventListener('change', async function (event) {
+            const status = event.target.value;
+
             try {
-                await request('PUT', '/watchlist/' + encodeURIComponent(domain), { status: event.target.value });
+                await request('PUT', '/watchlist/' + encodeURIComponent(domain), { status: status });
+
+                const chip = entry.querySelector('[data-status-chip]');
+
+                if (chip) {
+                    chip.textContent = status.charAt(0).toUpperCase() + status.slice(1);
+                }
+
                 say('Updated ' + domain + '.', false);
             } catch (error) {
                 say(error.message, true);
