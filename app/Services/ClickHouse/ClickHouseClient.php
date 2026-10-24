@@ -2,6 +2,7 @@
 
 namespace App\Services\ClickHouse;
 
+use Symfony\Component\Process\Exception\ExceptionInterface as ProcessExceptionInterface;
 use Symfony\Component\Process\ExecutableFinder;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -114,11 +115,15 @@ class ClickHouseClient
             (float) $this->config['timeout'],
         );
 
-        $process->run();
+        try {
+            $process->run();
+        } catch (ProcessExceptionInterface $exception) {
+            throw $this->processFailure('clickhouse-client failed', $exception, $process);
+        }
 
         if (! $process->isSuccessful()) {
             throw new ClickHouseException(
-                'clickhouse-client failed: '.$process->getErrorOutput().' | '.$process->getOutput(),
+                $this->redact('clickhouse-client failed: '.$process->getErrorOutput().' | '.$process->getOutput()),
                 $process->getExitCode() ?? 1,
             );
         }
@@ -165,11 +170,15 @@ class ClickHouseClient
             (float) $this->config['timeout'],
         );
 
-        $process->run();
+        try {
+            $process->run();
+        } catch (ProcessExceptionInterface $exception) {
+            throw $this->processFailure('clickhouse-client failed', $exception, $process);
+        }
 
         if (! $process->isSuccessful()) {
             throw new ClickHouseException(
-                'clickhouse-client failed: '.$process->getErrorOutput(),
+                $this->redact('clickhouse-client failed: '.$process->getErrorOutput()),
                 $process->getExitCode() ?? 1,
             );
         }
@@ -196,7 +205,10 @@ class ClickHouseClient
             null,
             null,
             null,
-            (float) $this->config['timeout'],
+            // The caller consumes the stream at its own pace, so a wall-clock
+            // process timeout would kill a healthy query while a chunk is
+            // being processed.
+            null,
         );
 
         $buffer = '';
@@ -236,6 +248,10 @@ class ClickHouseClient
             });
 
             $emit($buffer);
+        } catch (ProcessExceptionInterface $exception) {
+            $process->stop(0);
+
+            throw $this->processFailure('clickhouse-client stream failed', $exception, $process);
         } catch (Throwable $exception) {
             $process->stop(0);
 
@@ -244,7 +260,7 @@ class ClickHouseClient
 
         if (! $process->isSuccessful()) {
             throw new ClickHouseException(
-                'clickhouse-client stream failed: '.$errors,
+                $this->redact('clickhouse-client stream failed: '.$errors),
                 $process->getExitCode() ?? 1,
             );
         }
@@ -276,11 +292,15 @@ class ClickHouseClient
             (float) $this->config['timeout'],
         );
 
-        $process->run();
+        try {
+            $process->run();
+        } catch (ProcessExceptionInterface $exception) {
+            throw $this->processFailure('clickhouse-client insert failed', $exception, $process);
+        }
 
         if (! $process->isSuccessful()) {
             throw new ClickHouseException(
-                'clickhouse-client insert failed: '.$process->getErrorOutput(),
+                $this->redact('clickhouse-client insert failed: '.$process->getErrorOutput()),
                 $process->getExitCode() ?? 1,
             );
         }
@@ -481,13 +501,18 @@ class ClickHouseClient
         );
 
         $process->setInput($handle);
-        $process->run();
 
-        fclose($handle);
+        try {
+            $process->run();
+        } catch (ProcessExceptionInterface $exception) {
+            throw $this->processFailure('clickhouse-client insert failed', $exception, $process);
+        } finally {
+            fclose($handle);
+        }
 
         if (! $process->isSuccessful()) {
             throw new ClickHouseException(
-                'clickhouse-client insert failed: '.$process->getErrorOutput(),
+                $this->redact('clickhouse-client insert failed: '.$process->getErrorOutput()),
                 $process->getExitCode() ?? 1,
             );
         }
@@ -510,14 +535,52 @@ class ClickHouseClient
             (float) $this->config['timeout'],
         );
 
-        $process->run();
+        try {
+            $process->run();
+        } catch (ProcessExceptionInterface $exception) {
+            throw $this->processFailure('clickhouse-client could not run '.$path, $exception, $process);
+        }
 
         if (! $process->isSuccessful()) {
             throw new ClickHouseException(
-                'clickhouse-client could not run '.$path.': '.$process->getErrorOutput(),
+                $this->redact('clickhouse-client could not run '.$path.': '.$process->getErrorOutput()),
                 $process->getExitCode() ?? 1,
             );
         }
+    }
+
+    /**
+     * Symfony's process exceptions include the full command line, which
+     * contains the ClickHouse password. Never let it reach a log or a run row.
+     */
+    private function processFailure(string $context, Throwable $exception, Process $process): ClickHouseException
+    {
+        $message = $exception->getMessage();
+        $stderr = trim($process->getErrorOutput());
+
+        if ($stderr !== '') {
+            $message .= ' | '.$stderr;
+        }
+
+        return new ClickHouseException(
+            $this->redact($context.': '.$message),
+            $process->getExitCode() ?? 1,
+        );
+    }
+
+    private function redact(string $message): string
+    {
+        $password = (string) ($this->config['password'] ?? '');
+
+        if ($password !== '') {
+            $message = str_replace($password, 'REDACTED', $message);
+        }
+
+        return preg_replace(
+            '/--password(?:=|\s+)(?:\'[^\']*\'|"[^"]*"|\S+)/',
+            '--password REDACTED',
+            $message,
+        ) ?? $message;
     }
 
     /**
