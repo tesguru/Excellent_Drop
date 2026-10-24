@@ -57,6 +57,7 @@ class DiffZones implements ShouldQueue
             }
 
             $totalEvents = 0;
+            $diffed = 0;
             $messages = [];
 
             foreach ($tlds as $tld) {
@@ -69,7 +70,18 @@ class DiffZones implements ShouldQueue
                 $result = $this->diffTld($differ, $tld, $today, $yesterday);
 
                 $totalEvents += $result['removed'] + $result['added'];
+                $diffed++;
                 $messages[] = sprintf('%s: %d removed, %d added', $tld, $result['removed'], $result['added']);
+            }
+
+            if ($diffed === 0) {
+                // Day one has nothing to compare against, so there is nothing
+                // to search. Cleanup still runs to finish the chain.
+                $this->finishRun(0, 'Baseline only: no previous snapshot, so no diff or candidate search. '.implode(' | ', $messages));
+
+                Cleanup::dispatch($this->runId)->onQueue((string) config('zones.queue'));
+
+                return;
             }
 
             $this->finishRun($totalEvents, implode(' | ', $messages));

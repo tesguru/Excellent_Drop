@@ -37,7 +37,13 @@ ClickHouse (database `zones` by default) holds:
 * `com_candidates` — one row per removed `.com` name with a weaker version.
 
 ClickHouse statements run through `clickhouse-client`; small lookups use the
-HTTP interface.
+HTTP interface. The application connects with a dedicated account that has
+`SELECT`, `INSERT`, `ALTER`, `CREATE TABLE`, `DROP TABLE`, `TRUNCATE` and
+`OPTIMIZE` on `zones.*`, plus read-only metadata on `system.databases`,
+`system.parts` and `system.projection_parts`. It has no access to other
+databases. `zones:ch-migrate` does not run `CREATE DATABASE` when the database
+already exists, so the account can apply schema changes without an
+administrator grant.
 
 ## Pipeline
 
@@ -47,8 +53,8 @@ HTTP interface.
   HEAD request. A file older than 20 hours is not downloaded: the step waits
   30 minutes and retries, up to four times, then fails with a clear message.
 * **Extract** streams the gzip file through awk and sort, producing one
-  `<label>\t<nameservers>` line per second-level name. The raw zone may be
-  deleted when `ZONE_KEEP_RAW=false`.
+  `<label>\t<nameservers>` line per second-level name. The raw zone is deleted
+  when `KEEP_RAW=false`.
 * **Load** streams the extracted TSV into `zone_names` through
   `clickhouse-client`; rows never pass through a PHP array.
 * **Diff** compares consecutive snapshots on disk and writes `zone_events`.
@@ -56,7 +62,8 @@ HTTP interface.
 * **Cleanup** removes raw files and expired snapshots.
 
 The first day has no previous snapshot, so it records the baseline only: no
-diff and no candidate search.
+events, no candidate search and no `BuildComCandidates` job. Cleanup is still
+queued so the chain finishes.
 
 ## Candidate rules
 
@@ -145,18 +152,26 @@ the same filters.
 
 CZDS publishes after 06:00 UTC. The default schedule is 08:00 UTC (09:00 in
 Africa/Lagos) with an explicit scheduler timezone. `ZONE_RETAIN_DAYS` defaults
-to 2 and raw files are not kept by default.
+to 2: cleanup keeps today and yesterday and drops every older partition. Raw
+`.zone.gz` files are removed after extraction (`KEEP_RAW=false`). Candidate
+rows and `zone_events` history are not pruned with the snapshots, so older
+candidate dates survive.
 
 ## Security
 
-The dashboard is single-user and behind authentication. `/login` is rate
-limited. ClickHouse uses a dedicated user restricted to the `zones` database.
+The dashboard is single-user and behind authentication. `POST /login` is rate
+limited to five attempts per minute per IP address; further attempts get
+`429 Too Many Requests`. ClickHouse uses a dedicated user restricted to the
+`zones` database, with read-only metadata access needed by the migration
+command.
 
 ## Tests
 
 Unit and feature tests run without ClickHouse. Tests that need ClickHouse
 state it explicitly and are executed on the VPS against a separate
-`zones_test` database, never the real `zones` database. The suffix-search test
-asserts with `EXPLAIN indexes = 1` that ClickHouse reads the `name_rev_order`
-projection, so a schema or query change that loses the projection fails the
-suite.
+`zones_test` database, never the real `zones` database. The suite covers the
+restored-name exclusion, older candidate dates, short-name flooding,
+`exact_tld_count`, stale zone-file retries, the day-one baseline, the cleanup
+retention window and the HTTP allowlist. The suffix-search test asserts with
+`EXPLAIN indexes = 1` that ClickHouse reads the `name_rev_order` projection, so
+a schema or query change that loses the projection fails the suite.

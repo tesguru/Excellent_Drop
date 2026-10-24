@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\JobRun;
 use App\Models\User;
+use App\Models\ZoneTld;
 use App\Services\CandidateRepository;
 use App\Services\Zone\ZoneSearch;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -209,6 +210,27 @@ class DashboardPagesTest extends TestCase
     public function test_the_zones_page_renders(): void
     {
         $this->get('/zones')->assertOk();
+    }
+
+    public function test_the_zones_page_shows_the_published_zone_date(): void
+    {
+        $lastModified = now()->subHours(2)->startOfMinute();
+
+        ZoneTld::create([
+            'tld' => 'com',
+            'status' => 'downloaded',
+            'last_download_at' => now(),
+            'last_modified' => $lastModified,
+            'file_size' => 1024,
+            'rows' => 10,
+        ]);
+
+        $this->get('/zones')
+            ->assertOk()
+            ->assertSee('Zone date')
+            ->assertSee($lastModified->format('Y-m-d H:i'))
+            ->assertSee('published by ICANN')
+            ->assertSee('today');
     }
 
     public function test_the_json_endpoints_answer(): void

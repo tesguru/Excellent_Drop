@@ -60,9 +60,12 @@ class Cleanup implements ShouldQueue
 
     private function dropOldPartitions(ClickHouseClient $clickhouse): int
     {
-        $retention = (int) config('zones.snapshot_retention_days', 45);
+        $retention = max(1, (int) config('zones.retain_days', 2));
 
-        $cutoff = now()->subDays($retention)->format('Y-m-d');
+        // Keep today and the retention window behind it. With two days the
+        // cutoff is yesterday, so today's baseline and yesterday's diff source
+        // survive.
+        $cutoff = now()->subDays($retention - 1)->format('Y-m-d');
 
         $rows = $clickhouse->rows(
             sprintf(

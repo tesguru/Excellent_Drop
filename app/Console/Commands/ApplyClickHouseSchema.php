@@ -23,9 +23,23 @@ class ApplyClickHouseSchema extends Command
 
         $database = (string) config('zones.clickhouse.database', 'zones');
 
+        if (preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $database) !== 1) {
+            $this->error("Invalid ClickHouse database name: {$database}");
+
+            return self::FAILURE;
+        }
+
         // The schema file is written for the "zones" database, the configured
-        // one wins so a test database can be used.
-        $sql = str_replace(['zones.', 'CREATE DATABASE IF NOT EXISTS zones'], [$database.'.', 'CREATE DATABASE IF NOT EXISTS '.$database], (string) file_get_contents($path));
+        // one wins so a test database can be used. The CREATE DATABASE line is
+        // handled separately: a limited user may use an existing database but
+        // cannot create one.
+        $sql = (string) file_get_contents($path);
+        $sql = preg_replace('/^\s*CREATE DATABASE IF NOT EXISTS\s+zones\s*;\s*$/mi', '', $sql) ?? $sql;
+        $sql = str_replace('zones.', $database.'.', $sql);
+
+        if (! $this->databaseExists($clickhouse, $database)) {
+            $clickhouse->execute('CREATE DATABASE IF NOT EXISTS `'.str_replace('`', '``', $database).'`');
+        }
 
         $file = tempnam(sys_get_temp_dir(), 'dropwatch-schema-').'.sql';
 
@@ -42,6 +56,19 @@ class ApplyClickHouseSchema extends Command
         $this->info('ClickHouse schema applied to '.$database.'.');
 
         return self::SUCCESS;
+    }
+
+    private function databaseExists(ClickHouseClient $clickhouse, string $database): bool
+    {
+        // The HTTP client sends the configured database with every request, so
+        // it cannot run this check before that database exists. The binary does
+        // not select a database and answers against the default one.
+        $count = trim($clickhouse->run(
+            'SELECT count() FROM system.databases WHERE name = {n:String}',
+            ['n' => $database],
+        ));
+
+        return $count !== '' && $count !== '0';
     }
 
     /**

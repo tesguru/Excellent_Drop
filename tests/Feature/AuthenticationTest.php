@@ -47,6 +47,33 @@ class AuthenticationTest extends TestCase
         $this->assertGuest();
     }
 
+    public function test_the_login_attempts_are_rate_limited(): void
+    {
+        $user = User::create([
+            'name' => 'Owner',
+            'email' => 'owner@example.com',
+            'password' => 'secret123',
+        ]);
+
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $this->from('/login')
+                ->post('/login', [
+                    'email' => $user->email,
+                    'password' => 'wrong-password',
+                ])
+                ->assertRedirect('/login');
+        }
+
+        $this->from('/login')
+            ->post('/login', [
+                'email' => $user->email,
+                'password' => 'secret123',
+            ])
+            ->assertStatus(429);
+
+        $this->assertGuest();
+    }
+
     public function test_the_wrong_password_is_refused(): void
     {
         $user = User::create([

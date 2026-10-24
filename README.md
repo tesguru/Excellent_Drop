@@ -31,7 +31,8 @@ Blade, vanilla JavaScript and a Vite/Tailwind build.
    snapshots. The exact-name bonus needs two or more TLDs and is suppressed
    when every domain shares the same nameservers. It never performs RDAP or
    website lookups.
-7. Cleans up old snapshots and raw files.
+7. Cleans up old snapshots and raw files. Two daily snapshots are kept (today
+   and yesterday); raw zone files are never kept by default.
 
 ## Network policy
 
@@ -64,7 +65,8 @@ php artisan key:generate
 php artisan migrate --force
 
 # Create the ClickHouse tables (zone_names, zone_events, com_candidates)
-# and materialize the reversed-name projection when needed:
+# and materialize the reversed-name projection when needed. The database and
+# the app user are created once by an administrator, see "ClickHouse access":
 php artisan zones:ch-migrate
 
 # Create the single dashboard user:
@@ -87,6 +89,26 @@ Fill in `CZDS_USERNAME` and `CZDS_PASSWORD` in `.env` before the first run.
 | `zone_names` | One row per name per zone per snapshot date, with a reversed name column, an ngram index for prefix lookups and a `name_rev_order` projection for suffix lookups |
 | `zone_events` | One row per name that was added or removed on a date |
 | `com_candidates` | One row per removed `.com` name that has weaker versions, with the versions, their signals and the score |
+
+### ClickHouse access
+
+The application should not connect as `default`. Create the database and an
+account that can only touch it; run this once as an administrator:
+
+```sql
+CREATE DATABASE IF NOT EXISTS zones;
+CREATE USER IF NOT EXISTS dropwatch IDENTIFIED WITH sha256_password BY '<strong-password>';
+GRANT SELECT, INSERT, ALTER, CREATE TABLE, DROP TABLE, TRUNCATE, OPTIMIZE ON zones.* TO dropwatch;
+GRANT SELECT ON system.databases TO dropwatch;
+GRANT SELECT ON system.parts TO dropwatch;
+GRANT SELECT ON system.projection_parts TO dropwatch;
+```
+
+Set `CLICKHOUSE_USER=dropwatch` and `CLICKHOUSE_PASSWORD` in `.env`, then run
+`php artisan zones:ch-migrate`. It creates the tables and projection but never
+creates the database when it already exists. The `system` grants are read-only
+metadata used to detect the database and whether the projection has been
+materialized. The account has no access to any other database.
 
 ## Commands
 
@@ -143,6 +165,18 @@ UTC, default `0 8 * * *` = 09:00 Africa/Lagos), the worker heartbeat every
 minute and the housekeeping command hourly. The heartbeat is what the status
 light in the header shows, so a stopped worker is visible at a glance.
 
+### Retention
+
+`ZONE_RETAIN_DAYS` defaults to 2, so the cleanup step keeps today's snapshot
+and yesterday's (the source of the next diff) and drops older partitions.
+`KEEP_RAW=false` removes downloaded `.zone.gz` files after extraction. The
+candidate rows and the `zone_events` history stay in ClickHouse even after a
+snapshot is pruned, so older candidate days are never deleted by cleanup.
+
+On the first day there is no previous snapshot, so the diff step stores the
+baseline only: no events are written, the candidate search is not queued, and
+cleanup still runs to finish the chain.
+
 The staleness guard can be tuned with `ZONE_STALE_AFTER_HOURS` (20),
 `ZONE_STALE_RETRY_MINUTES` (30) and `ZONE_STALE_MAX_RETRIES` (4). The Zones page
 shows the `Last-Modified` date of the file that was actually downloaded, so a
@@ -166,6 +200,12 @@ inserted in batches of 1,000, progress and chunk duration are written to
 
 The queue workers are supervisor programs, see
 `deploy/supervisor/dropwatch-worker.conf`.
+
+## Security
+
+The dashboard is single user and every route except `/login` requires
+authentication. `POST /login` accepts at most five attempts per minute from one
+IP address; further attempts receive `429 Too Many Requests`.
 
 ## Naming and statuses
 

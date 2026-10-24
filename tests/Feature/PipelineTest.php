@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Jobs\BuildComCandidates;
+use App\Jobs\Cleanup;
+use App\Jobs\DiffZones;
 use App\Models\JobRun;
 use App\Services\CandidateRepository;
 use App\Services\Candidates\OwnerIndependence;
@@ -456,6 +458,36 @@ class PipelineTest extends TestCase
 
         $this->assertContains('acmeplumbing', $repository->removedNames($today));
         $this->assertSame(1, $repository->countsForDate($today)['removed']);
+    }
+
+    public function test_day_one_stores_the_baseline_without_a_diff_or_a_search(): void
+    {
+        $today = now()->format('Y-m-d');
+
+        $loader = new ZoneLoader($this->clickhouse, self::DATABASE);
+
+        $loader->load('com', $this->namesFile(['acmeplumbing']), $today);
+
+        (new DiffZones((string) Str::uuid()))->handle(
+            $this->clickhouse,
+            new ZoneDiffer($this->clickhouse, self::DATABASE),
+        );
+
+        $events = (int) $this->clickhouse->scalar(
+            'SELECT count() FROM '.self::DATABASE.'.zone_events',
+        );
+
+        $this->assertSame(0, $events);
+
+        Queue::assertNotPushed(BuildComCandidates::class);
+        Queue::assertPushed(Cleanup::class);
+
+        $run = JobRun::where('step', 'diff')->latest('id')->firstOrFail();
+
+        $this->assertSame(JobRun::STATUS_SUCCESS, $run->status);
+        $this->assertSame(0, $run->rows);
+        $this->assertStringContainsString('Baseline only', (string) $run->message);
+        $this->assertStringContainsString('no previous snapshot', (string) $run->message);
     }
 
     private function buildCandidates(): void

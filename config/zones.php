@@ -52,8 +52,10 @@ return [
     'sort_tmp_dir' => env('SORT_TMP_DIR', '/var/tmp/dropwatch-sort'),
     'cat_binary' => env('ZONE_CAT_BINARY', 'gzip -dc'),
     'keep_raw' => (bool) env('KEEP_RAW', false),
-    'retain_days' => (int) env('ZONE_RETAIN_DAYS', 45),
-    'snapshot_retention_days' => (int) env('ZONE_SNAPSHOT_RETENTION_DAYS', 45),
+
+    // Number of daily snapshots kept in ClickHouse, today included. Two means
+    // today and yesterday: enough for the next diff and nothing to search.
+    'retain_days' => (int) env('ZONE_RETAIN_DAYS', 2),
 
     // ICANN publishes the zone files after 06:00 UTC. A Last-Modified header
     // older than this means the new file is not out yet; the download step

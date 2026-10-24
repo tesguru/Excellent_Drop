@@ -15,6 +15,11 @@ use Illuminate\Support\Carbon;
  */
 class CandidateRepository
 {
+    /**
+     * Candidates are history and are kept after their snapshots are pruned.
+     */
+    private const SEARCH_LOOKBACK_DAYS = 45;
+
     public function __construct(
         private readonly ClickHouseClient $clickhouse,
         private readonly string $database = 'zones',
@@ -84,7 +89,7 @@ class CandidateRepository
             return [];
         }
 
-        $from = now()->subDays((int) config('zones.retain_days', 45))->format('Y-m-d');
+        $from = now()->subDays(self::SEARCH_LOOKBACK_DAYS)->format('Y-m-d');
 
         $rows = $this->clickhouse->rows(
             $this->visibleCandidatesSql(
