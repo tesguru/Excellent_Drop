@@ -55,6 +55,19 @@ class ClickHouseClientRedactionTest extends TestCase
         $this->assertRedacted(fn () => $this->client(0.2)->rowsFromSql('SELECT 1'));
     }
 
+    public function test_a_process_that_cannot_start_is_reported_safely(): void
+    {
+        file_put_contents($this->binary, "#!/nonexistent/interpreter\n");
+
+        try {
+            $this->client()->rowsFromSql('SELECT 1');
+            $this->fail('The client should have thrown.');
+        } catch (ClickHouseException $exception) {
+            $this->assertStringNotContainsString('unit-secret-password', $exception->getMessage());
+            $this->assertNotSame('', trim($exception->getMessage()));
+        }
+    }
+
     public function test_a_slow_consumer_does_not_time_out_the_stream(): void
     {
         file_put_contents($this->binary, "#!/bin/sh\necho '{\"ok\":1}'\n");

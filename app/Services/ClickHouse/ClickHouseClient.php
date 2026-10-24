@@ -556,7 +556,7 @@ class ClickHouseClient
     private function processFailure(string $context, Throwable $exception, Process $process): ClickHouseException
     {
         $message = $exception->getMessage();
-        $stderr = trim($process->getErrorOutput());
+        $stderr = $process->isStarted() ? trim($process->getErrorOutput()) : '';
 
         if ($stderr !== '') {
             $message .= ' | '.$stderr;
