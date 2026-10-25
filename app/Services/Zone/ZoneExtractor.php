@@ -92,8 +92,10 @@ AWK;
 
         $this->prepareTmpDir($tmpDir);
 
+        // Compressed sort runs keep a .com extraction inside the 38G disk;
+        // uncompressed temp needs ~10G on its own.
         $command = sprintf(
-            'set -o pipefail; %s %s | LC_ALL=C awk -v tld=%s %s | LC_ALL=C sort -u -k1,1 -k2,2 -T %s | LC_ALL=C awk %s > %s',
+            'set -o pipefail; %s %s | LC_ALL=C awk -v tld=%s %s | LC_ALL=C sort -u -k1,1 -k2,2 --compress-program=gzip -T %s | LC_ALL=C awk %s > %s',
             $this->catBinary(),
             escapeshellarg($gzPath),
             escapeshellarg($tld),
