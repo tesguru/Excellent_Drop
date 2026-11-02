@@ -27,7 +27,7 @@
     <div class="border-b px-4 py-3" style="border-color: var(--border)">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
-                <h2 class="display text-sm font-bold">Pending delete candidates</h2>
+                <h2 class="display text-sm font-bold">Pending Daily List</h2>
                 <span class="chip muted" style="background: var(--surface-2)">{{ number_format($total) }}</span>
 
                 @if ($query !== '')
@@ -40,9 +40,7 @@
             <span class="text-xs muted">.com names still registered but heading for deletion.</span>
         </div>
 
-        <form method="GET" action="{{ url('/daily') }}" class="mt-3 flex flex-wrap items-center gap-2">
-            <input type="hidden" name="list" value="pending">
-
+        <form method="GET" action="{{ url('/daily/pending') }}" class="mt-3 flex flex-wrap items-center gap-2">
             <div class="relative min-w-[12rem] flex-1">
                 <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 muted"
                      fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">

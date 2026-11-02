@@ -37,7 +37,7 @@
     <div class="border-b px-4 py-3" style="border-color: var(--border)">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
-                <h2 class="display text-sm font-bold">Drop candidates</h2>
+                <h2 class="display text-sm font-bold">Drop Daily List</h2>
                 <span class="chip muted" style="background: var(--surface-2)">{{ number_format($total) }}</span>
 
                 @if ($query !== '')

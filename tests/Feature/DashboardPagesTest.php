@@ -120,31 +120,32 @@ class DashboardPagesTest extends TestCase
         $this->get('/daily')->assertOk()->assertSee('acmeplumbing');
     }
 
-    public function test_the_daily_sidebar_switches_between_drop_and_pending_candidates(): void
+    public function test_the_sidebar_switches_between_the_pending_and_drop_daily_lists(): void
     {
         $this->get('/daily')
             ->assertOk()
-            ->assertSee('Drop candidates')
-            ->assertSee('Pending delete candidates')
+            ->assertSee('Pending Daily List')
+            ->assertSee('Drop Daily List')
             ->assertSee('acmeplumbing.com');
 
-        $this->get('/daily?list=pending')
+        $this->get('/daily/pending')
             ->assertOk()
-            ->assertSee('Pending delete candidates')
+            ->assertSee('Pending Daily List')
             ->assertSee('pendingpick.com')
             ->assertDontSee('acmeplumbing.com');
 
-        $this->getJson('/api/daily?list=pending')
+        $this->getJson('/api/daily/pending')
             ->assertOk()
             ->assertJsonPath('list', 'pending')
             ->assertJsonPath('candidates.0.domain', 'pendingpick.com')
             ->assertJsonPath('counts.pending_candidates', 1)
             ->assertJsonPath('pagination.total', 1);
 
-        // An unknown list falls back to the drop candidates.
-        $this->get('/daily?list=bogus')
+        // The page is chosen by the route, not by the query.
+        $this->get('/daily?list=pending')
             ->assertOk()
-            ->assertSee('acmeplumbing.com');
+            ->assertSee('acmeplumbing.com')
+            ->assertDontSee('pendingpick.com');
     }
 
     public function test_the_daily_candidates_open_in_a_modal_with_their_variations(): void

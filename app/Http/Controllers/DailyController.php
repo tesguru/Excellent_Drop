@@ -12,8 +12,6 @@ class DailyController extends Controller
 {
     private const PER_PAGE = 25;
 
-    private const LISTS = ['candidates', 'pending'];
-
     public function __construct(private readonly CandidateRepository $candidates) {}
 
     public function index(Request $request): View
@@ -152,11 +150,13 @@ class DailyController extends Controller
         return is_string($term) ? trim($term) : '';
     }
 
+    /**
+     * Which sidebar entry is open: /daily/pending is the pending list,
+     * every other daily route is the drop list.
+     */
     private function list(Request $request): string
     {
-        $list = $request->query('list', 'candidates');
-
-        return is_string($list) && in_array($list, self::LISTS, true) ? $list : 'candidates';
+        return $request->routeIs('daily.pending', 'api.daily.pending') ? 'pending' : 'candidates';
     }
 
     private function page(Request $request): int

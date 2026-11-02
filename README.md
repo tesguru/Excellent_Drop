@@ -148,7 +148,7 @@ account has no access to any other database.
 | Page | What it shows |
 | --- | --- |
 | Overview | Dropped and pending-delete counts, today's candidates, the worker heartbeat, the last run and the zone access that expires soon |
-| Daily list | Drop candidates and pending-delete candidates for .com, each searchable from a sidebar |
+| Daily lists | Separate sidebar entries for the .com Pending Daily List (`/daily/pending`) and Drop Daily List (`/daily`), each searchable |
 | Search | Names across every TLD in the latest zone snapshot, with Contains, Starts with, Ends with and Exact modes |
 | Watchlist | Domains to keep an eye on, with a status and notes |
 | Jobs | Every step of every run with its status, duration and row counts |
