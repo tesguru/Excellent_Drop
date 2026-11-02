@@ -169,6 +169,50 @@ class FakeCandidateRepository extends CandidateRepository
         return $this->added;
     }
 
+    public function pageOfLifecycleNames(string $list, string $date, string $term = '', int $perPage = 25, int $page = 1): array
+    {
+        $domains = $list === 'dropped' ? $this->removed : $this->added;
+
+        $rows = array_map(fn (string $domain) => [
+            'domain' => $domain,
+            'tld' => str_contains($domain, '.') ? substr($domain, strrpos($domain, '.') + 1) : 'com',
+            'drop_utc' => $list === 'dropped' ? $date.' 04:00:00' : '',
+            'registrar' => '',
+        ], $domains);
+
+        $terms = array_values(array_filter(preg_split('/\s+/', strtolower(trim($term))) ?: []));
+
+        foreach ($terms as $part) {
+            if (str_contains($part, '.')) {
+                $part = (string) preg_replace('/\.[^.]+$/', '', $part);
+            }
+
+            if ($part === '') {
+                continue;
+            }
+
+            $rows = array_values(array_filter(
+                $rows,
+                fn (array $row) => str_contains(strtolower((string) $row['domain']), $part),
+            ));
+        }
+
+        usort($rows, fn (array $a, array $b) => strcmp((string) $a['domain'], (string) $b['domain']));
+
+        $total = count($rows);
+        $perPage = max(1, $perPage);
+        $pages = max(1, (int) ceil($total / $perPage));
+        $page = min(max(1, $page), $pages);
+
+        return [
+            'names' => array_slice($rows, ($page - 1) * $perPage, $perPage),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => $pages,
+        ];
+    }
+
     public function removedCount(string $from, string $to): int
     {
         return count($this->removed);

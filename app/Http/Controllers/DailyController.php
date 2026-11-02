@@ -12,17 +12,21 @@ class DailyController extends Controller
 {
     private const PER_PAGE = 25;
 
+    private const LISTS = ['candidates', 'dropped', 'pending'];
+
     public function __construct(private readonly CandidateRepository $candidates) {}
 
     public function index(Request $request): View
     {
         $date = $this->date($request);
+        $list = $this->list($request);
         $shortOnly = $request->boolean('short');
         $endingsOnly = $request->boolean('endings');
         $term = $this->term($request);
 
         return view('daily', [
             'date' => $date,
+            'list' => $list,
             'shortOnly' => $shortOnly,
             'endingsOnly' => $endingsOnly,
             'data' => $this->dataFor(
@@ -31,6 +35,7 @@ class DailyController extends Controller
                 $endingsOnly,
                 $term,
                 $this->page($request),
+                $list,
                 $this->variation($request, 'min_variations'),
                 $this->variation($request, 'max_variations'),
                 $this->variation($request, 'exact_variations'),
@@ -47,6 +52,7 @@ class DailyController extends Controller
             $request->boolean('endings'),
             $this->term($request),
             $this->page($request),
+            $this->list($request),
             $this->variation($request, 'min_variations'),
             $this->variation($request, 'max_variations'),
             $this->variation($request, 'exact_variations'),
@@ -62,11 +68,39 @@ class DailyController extends Controller
         bool $endingsOnly,
         string $term,
         int $page,
+        string $list = 'candidates',
         ?int $minVariations = null,
         ?int $maxVariations = null,
         ?int $exactVariations = null,
     ): array {
         $counts = $this->candidates->countsForDate($date);
+
+        if ($list !== 'candidates') {
+            $result = $this->candidates->pageOfLifecycleNames($list, $date, $term, self::PER_PAGE, $page);
+
+            return [
+                'date' => $date,
+                'list' => $list,
+                'query' => $term,
+                'counts' => [
+                    'removed' => $counts['removed'] ?? 0,
+                    'added' => $counts['added'] ?? 0,
+                    'candidates' => $counts['candidates'] ?? 0,
+                    'dropped' => $counts['dropped'] ?? 0,
+                    'pending' => $counts['pending'] ?? 0,
+                ],
+                'pagination' => [
+                    'page' => $result['page'],
+                    'per_page' => $result['per_page'],
+                    'total' => $result['total'],
+                    'pages' => $result['pages'],
+                    'has_more' => $result['page'] < $result['pages'],
+                ],
+                'removed_names' => $this->candidates->removedNames($date),
+                'added_names' => $this->candidates->addedNames($date),
+                'names' => $result['names'],
+            ];
+        }
 
         $result = $this->candidates->pageForDate(
             $date,
@@ -82,6 +116,7 @@ class DailyController extends Controller
 
         return [
             'date' => $date,
+            'list' => $list,
             'short_only' => $shortOnly,
             'endings_only' => $endingsOnly,
             'query' => $term,
@@ -113,6 +148,13 @@ class DailyController extends Controller
         $term = $request->query('q', '');
 
         return is_string($term) ? trim($term) : '';
+    }
+
+    private function list(Request $request): string
+    {
+        $list = $request->query('list', 'candidates');
+
+        return is_string($list) && in_array($list, self::LISTS, true) ? $list : 'candidates';
     }
 
     private function page(Request $request): int

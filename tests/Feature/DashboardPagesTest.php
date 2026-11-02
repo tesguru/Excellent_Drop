@@ -103,6 +103,34 @@ class DashboardPagesTest extends TestCase
         $this->get('/daily')->assertOk()->assertSee('acmeplumbing');
     }
 
+    public function test_the_daily_list_shows_dropped_and_pending_names_separately(): void
+    {
+        $this->get('/daily?list=dropped')
+            ->assertOk()
+            ->assertSee('Dropped domains')
+            ->assertSee('anothername')
+            ->assertSee('dropped '.now()->format('Y-m-d').' 04:00:00 UTC')
+            ->assertDontSee('newname')
+            ->assertDontSee('acmeplumbing.com');
+
+        $this->get('/daily?list=pending')
+            ->assertOk()
+            ->assertSee('Pending delete')
+            ->assertSee('newname')
+            ->assertDontSee('anothername');
+
+        $this->getJson('/api/daily?list=dropped')
+            ->assertOk()
+            ->assertJsonPath('list', 'dropped')
+            ->assertJsonPath('names.0.domain', 'anothername')
+            ->assertJsonPath('pagination.total', 1);
+
+        // An unknown list falls back to the candidates.
+        $this->get('/daily?list=bogus')
+            ->assertOk()
+            ->assertSee('acmeplumbing.com');
+    }
+
     public function test_the_daily_candidates_open_in_a_modal_with_their_variations(): void
     {
         $this->get('/daily')

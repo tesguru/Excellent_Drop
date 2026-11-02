@@ -293,6 +293,95 @@ class CandidateRepository
     }
 
     /**
+     * A page of the pending-delete feed, split by lifecycle. "dropped" are
+     * the names that dropped on the given day, "pending" the names currently
+     * in redemption or pending delete; the date does not apply to the latter.
+     *
+     * @return array{names: array<int, array<string, mixed>>, total: int, page: int, per_page: int, pages: int}
+     */
+    public function pageOfLifecycleNames(string $list, string $date, string $term = '', int $perPage = 25, int $page = 1): array
+    {
+        $perPage = max(1, min(100, $perPage));
+        $page = max(1, $page);
+
+        $params = $list === 'dropped' ? ['d' => $date] : [];
+
+        $where = $list === 'dropped'
+            ? "status = 'dropped' AND toDate(drop_utc) = {d:Date}"
+            : "status IN ('pending_delete', 'redemption')";
+
+        $order = $list === 'dropped' ? 'ORDER BY drop_utc, name, tld' : 'ORDER BY name, tld';
+
+        foreach ($this->searchTerms($term) as $index => $part) {
+            $where .= ' AND positionCaseInsensitive(name, {term'.$index.':String}) > 0';
+            $params['term'.$index] = $part;
+        }
+
+        if ($this->pendingDeleteReady()) {
+            $totalRows = $this->clickhouse->rows(
+                sprintf('SELECT count() AS total FROM %s.pendingdelete_names FINAL WHERE %s', $this->database, $where),
+                $params,
+            );
+
+            $rows = $this->clickhouse->rows(
+                sprintf(
+                    'SELECT name, tld, drop_utc, registrar FROM %s.pendingdelete_names FINAL WHERE %s %s LIMIT {lim:UInt32} OFFSET {off:UInt32}',
+                    $this->database,
+                    $where,
+                    $order,
+                ),
+                $params + ['lim' => $perPage, 'off' => ($page - 1) * $perPage],
+            );
+
+            $names = array_map(fn (array $row) => [
+                'domain' => $this->domainOf($row),
+                'tld' => (string) ($row['tld'] ?? ''),
+                'drop_utc' => (string) ($row['drop_utc'] ?? ''),
+                'registrar' => (string) ($row['registrar'] ?? ''),
+            ], $rows);
+        } else {
+            // Before the first pending-delete import the zone diff history
+            // stands in; it only knows com.
+            $params += ['tld' => 'com', 'event' => $list === 'dropped' ? 'removed' : 'added'];
+
+            $totalRows = $this->clickhouse->rows(
+                sprintf(
+                    'SELECT count() AS total FROM %s.zone_events WHERE tld = {tld:String} AND event = {event:String} AND event_date = {d:Date}',
+                    $this->database,
+                ),
+                $params + ['d' => $date],
+            );
+
+            $rows = $this->clickhouse->rows(
+                sprintf(
+                    'SELECT name FROM %s.zone_events WHERE tld = {tld:String} AND event = {event:String} AND event_date = {d:Date} ORDER BY name LIMIT {lim:UInt32} OFFSET {off:UInt32}',
+                    $this->database,
+                ),
+                $params + ['d' => $date, 'lim' => $perPage, 'off' => ($page - 1) * $perPage],
+            );
+
+            $names = array_map(fn (array $row) => [
+                'domain' => $this->domainOf($row + ['tld' => 'com']),
+                'tld' => 'com',
+                'drop_utc' => '',
+                'registrar' => '',
+            ], $rows);
+        }
+
+        $total = (int) ($totalRows[0]['total'] ?? 0);
+        $pages = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $pages);
+
+        return [
+            'names' => $names,
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => $pages,
+        ];
+    }
+
+    /**
      * How many domains dropped between two dates.
      */
     public function removedCount(string $from, string $to): int

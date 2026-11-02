@@ -10,6 +10,8 @@
             <input id="date" name="date" type="date" value="{{ $date }}" class="field mt-2">
         </div>
 
+        <input type="hidden" name="list" value="{{ $list }}">
+
         @if (($data['query'] ?? '') !== '')
             <input type="hidden" name="q" value="{{ $data['query'] }}">
         @endif
@@ -23,7 +25,7 @@
         @endif
 
         @foreach (['min_variations', 'max_variations', 'exact_variations'] as $variationFilter)
-            @if ($data[$variationFilter] !== null)
+            @if (($data[$variationFilter] ?? null) !== null)
                 <input type="hidden" name="{{ $variationFilter }}" value="{{ $data[$variationFilter] }}">
             @endif
         @endforeach
@@ -48,61 +50,39 @@
         </div>
     </form>
 
-    @include('partials.daily-candidates', [
-        'candidates' => $data['candidates'],
-        'pagination' => $data['pagination'],
-        'query' => $data['query'],
-        'date' => $date,
-        'shortOnly' => $shortOnly,
-        'endingsOnly' => $endingsOnly,
-        'minVariations' => $data['min_variations'],
-        'maxVariations' => $data['max_variations'],
-        'exactVariations' => $data['exact_variations'],
-    ])
-
-    <div class="grid gap-6 lg:grid-cols-2">
-        <div class="card overflow-hidden">
-            <div class="border-b px-4 py-3" style="border-color: var(--border)">
-                <h2 class="display text-sm font-bold">Dropped domains</h2>
-                <p class="mt-0.5 text-xs muted">These names dropped on this date and are free to register.</p>
-            </div>
-            <div class="max-h-96 overflow-y-auto p-4">
-                @if (count($data['removed_names']) === 0)
-                    <p class="py-6 text-center text-sm muted">Nothing dropped on this date.</p>
-                @else
-                    <ul class="flex flex-wrap gap-2">
-                        @foreach ($data['removed_names'] as $domain)
-                            <li class="rounded-lg px-2 py-1 font-mono text-xs"
-                                style="background: rgb(244 63 94 / 0.12); color: rgb(251 113 133)">
-                                {{ $domain }}
-                                @include('partials.rdap-action', ['domain' => $domain])
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
-            </div>
-        </div>
-
-        <div class="card overflow-hidden">
-            <div class="border-b px-4 py-3" style="border-color: var(--border)">
-                <h2 class="display text-sm font-bold">Pending delete</h2>
-                <p class="mt-0.5 text-xs muted">Names still registered but heading for deletion.</p>
-            </div>
-            <div class="max-h-96 overflow-y-auto p-4">
-                @if (count($data['added_names']) === 0)
-                    <p class="py-6 text-center text-sm muted">Nothing is pending right now.</p>
-                @else
-                    <ul class="flex flex-wrap gap-2">
-                        @foreach ($data['added_names'] as $domain)
-                            <li class="rounded-lg px-2 py-1 font-mono text-xs"
-                                style="background: rgb(16 185 129 / 0.13); color: rgb(52 211 153)">
-                                {{ $domain }}
-                                @include('partials.rdap-action', ['domain' => $domain])
-                            </li>
-                        @endforeach
-                    </ul>
-                @endif
-            </div>
-        </div>
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+        @foreach ([
+            'candidates' => 'Candidates',
+            'dropped' => 'Dropped',
+            'pending' => 'Pending delete',
+        ] as $listKey => $listLabel)
+            <a href="{{ url('/daily?date='.$date.'&list='.$listKey) }}"
+               class="chip border transition {{ $list === $listKey ? 'border-transparent text-[color:var(--accent-ink)]' : 'muted border-[color:var(--border)] hover:text-[color:var(--text)]' }}"
+               @if ($list === $listKey) style="background: var(--accent)" @else style="background: var(--surface-2)" @endif>
+                {{ $listLabel }}
+            </a>
+        @endforeach
     </div>
+
+    @if ($list === 'candidates')
+        @include('partials.daily-candidates', [
+            'candidates' => $data['candidates'],
+            'pagination' => $data['pagination'],
+            'query' => $data['query'],
+            'date' => $date,
+            'shortOnly' => $shortOnly,
+            'endingsOnly' => $endingsOnly,
+            'minVariations' => $data['min_variations'],
+            'maxVariations' => $data['max_variations'],
+            'exactVariations' => $data['exact_variations'],
+        ])
+    @else
+        @include('partials.daily-names', [
+            'names' => $data['names'],
+            'pagination' => $data['pagination'],
+            'query' => $data['query'],
+            'date' => $date,
+            'list' => $list,
+        ])
+    @endif
 @endsection
