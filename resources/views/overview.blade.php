@@ -7,10 +7,10 @@
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         @php
             $tiles = [
-                ['label' => 'Names removed', 'value' => $data['counts']['removed'], 'hint' => 'left the .com zone today'],
-                ['label' => 'Names added', 'value' => $data['counts']['added'], 'hint' => 'registered in the .com zone today'],
-                ['label' => 'Candidates', 'value' => $data['counts']['candidates'], 'hint' => 'with weaker versions'],
-                ['label' => 'Candidates (7d)', 'value' => $data['counts']['week_candidates'], 'hint' => $data['counts']['week_removed'].' names removed'],
+                ['label' => 'Dropped today', 'value' => $data['counts']['dropped'], 'hint' => 'across all supported TLDs'],
+                ['label' => 'Pending / redemption', 'value' => $data['counts']['pending'] + $data['counts']['redemption'], 'hint' => 'registered but heading for deletion'],
+                ['label' => 'Candidates', 'value' => $data['counts']['candidates'], 'hint' => 'dropped names with weaker versions'],
+                ['label' => 'Candidates (7d)', 'value' => $data['counts']['week_candidates'], 'hint' => $data['counts']['week_removed'].' domains dropped'],
             ];
         @endphp
 

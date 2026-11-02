@@ -89,7 +89,7 @@
                                     </span>
                                 </div>
                                 <p class="mt-1.5 text-xs muted">
-                                    Removed {{ $candidate['event_date'] }}
+                                    Dropped {{ $candidate['event_date'] }}
                                     @if (! empty($candidate['estimated_drop_date']))
                                         &middot; estimated drop {{ $candidate['estimated_drop_date'] }}
                                     @endif

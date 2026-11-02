@@ -14,15 +14,19 @@ use Illuminate\Support\Facades\Schedule;
 |
 */
 
-// The daily zone pipeline. ICANN publishes after 06:00 UTC, so the run starts
-// at 08:00 UTC (09:00 Africa/Lagos) to give the files time to appear. The
-// schedule timezone is explicit: ZONES_SCHEDULE is a cron expression in UTC.
-Schedule::command('zones:run')
-    ->cron((string) config('zones.schedule', '0 8 * * *'))
-    ->timezone('UTC')
-    ->withoutOverlapping()
-    ->onOneServer()
-    ->runInBackground(false);
+// PendingDelete.net is the discovery source. Dropping today is the list that
+// feeds the daily candidates, so it refreshes every ten minutes. The pending
+// backlog and yesterday's drops change slowly and refresh less often.
+foreach ((array) config('pendingdelete.schedule', []) as $list => $cron) {
+    Schedule::command('pendingdelete:sync --list='.$list)
+        ->cron((string) $cron)
+        ->timezone('UTC')
+        ->withoutOverlapping()
+        ->onOneServer();
+}
+
+// The CZDS zone pipeline is kept for manual backfills only:
+//   php artisan zones:run
 
 // Worker heartbeat. The light in the dashboard turns red when this stops.
 Schedule::job(new WorkerHeartbeat)

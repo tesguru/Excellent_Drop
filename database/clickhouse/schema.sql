@@ -1,7 +1,7 @@
 -- DropWatch ClickHouse schema (database: zones)
 --
--- Applied by `php artisan zones:ch-migrate`. Everything is IF NOT EXISTS so
--- the command is safe to run repeatedly.
+-- Applied by `php artisan zones:ch-migrate`. Tables are IF NOT EXISTS and the
+-- corpus view is replaceable so the command is safe to run repeatedly.
 
 CREATE DATABASE IF NOT EXISTS zones;
 
@@ -56,6 +56,96 @@ ENGINE = MergeTree
 ORDER BY (event_date, score);
 
 -- Existing installations need the column added explicitly: CREATE TABLE IF
--- NOT EXISTS does not modify a table that already exists.
+-- NOT EXISTS does not modify a table that already exists. Rows written before
+-- the PendingDelete source keep tld='com' and an empty status.
 ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `is_short` UInt8 DEFAULT 0;
 ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `exact_tld_count` UInt16 DEFAULT 0;
+ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `tld` LowCardinality(String) DEFAULT 'com';
+ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `status` LowCardinality(String) DEFAULT '';
+ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `drop_utc` Nullable(DateTime('UTC'));
+
+-- ---------------------------------------------------------------------------
+-- PendingDelete.net
+--
+-- One row per normalized domain identity (tld + label). ReplacingMergeTree
+-- keeps the highest version, so re-importing the same dataset is idempotent
+-- and a status change never creates a second identity. The label is lower
+-- case; the TLD is the suffix from the dataset file.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS zones.pendingdelete_names
+(
+    `tld` LowCardinality(String),
+    `name` String,
+    `label_length` UInt8,
+    `status` LowCardinality(String),
+    `source_list` LowCardinality(String),
+    `drop_utc` Nullable(DateTime('UTC')),
+    `registrar` String DEFAULT '',
+    `built_utc` DateTime('UTC'),
+    `observed_at` DateTime64(3, 'UTC'),
+    `version` UInt64
+)
+ENGINE = ReplacingMergeTree(version)
+ORDER BY (tld, name);
+
+-- Append-only record of every status transition. A row is written in the same
+-- operation as the state change, before the current-state row is replaced.
+CREATE TABLE IF NOT EXISTS zones.pendingdelete_status_history
+(
+    `tld` LowCardinality(String),
+    `name` String,
+    `status` LowCardinality(String),
+    `source_list` LowCardinality(String),
+    `drop_utc` Nullable(DateTime('UTC')),
+    `built_utc` DateTime('UTC'),
+    `observed_at` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (tld, name, observed_at);
+
+-- A dataset is written here first. It is merged into the current state only
+-- after the whole file parsed and its declared row count matched. The TTL
+-- removes the rows of an import that died before cleanup.
+CREATE TABLE IF NOT EXISTS zones.pendingdelete_staging
+(
+    `import_id` String,
+    `tld` LowCardinality(String),
+    `name` String,
+    `label_length` UInt8,
+    `status` LowCardinality(String),
+    `source_list` LowCardinality(String),
+    `drop_utc` Nullable(DateTime('UTC')),
+    `registrar` String DEFAULT '',
+    `built_utc` DateTime('UTC'),
+    `observed_at` DateTime64(3, 'UTC'),
+    `version` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (import_id, tld, name)
+TTL observed_at + INTERVAL 6 HOUR DELETE;
+
+-- Identities already searched for weaker versions, including names that had
+-- none. A 10-minute import only searches the names that appeared since the
+-- previous run; rebuilding one date clears its rows first.
+CREATE TABLE IF NOT EXISTS zones.pendingdelete_scored
+(
+    `event_date` Date,
+    `tld` LowCardinality(String),
+    `name` String,
+    `scored_at` DateTime64(3, 'UTC')
+)
+ENGINE = ReplacingMergeTree(scored_at)
+ORDER BY (event_date, tld, name);
+
+-- The corpus the weaker-version search reads. It is the latest full zone
+-- snapshot plus every name that is currently in redemption or pending delete.
+-- Dropped names are excluded because they are no longer registrations. This
+-- keeps TLD comparison working without downloading CZDS files every day.
+CREATE OR REPLACE VIEW zones.weaker_corpus AS
+SELECT name, name_rev, tld, ns, toDate(now('UTC')) AS snapshot_date
+FROM zones.zone_names
+WHERE snapshot_date = (SELECT max(snapshot_date) FROM zones.zone_names)
+UNION ALL
+SELECT name, reverse(name) AS name_rev, tld, '' AS ns, toDate(now('UTC')) AS snapshot_date
+FROM zones.pendingdelete_names FINAL
+WHERE status != 'dropped';
