@@ -78,9 +78,8 @@ php artisan key:generate
 php artisan migrate --force
 
 # Create the ClickHouse tables (zone corpus, PendingDelete state and
-# candidates) and materialize the reversed-name projection when needed. The
-# database and the app user are created once by an administrator, see
-# "ClickHouse access":
+# candidates). The database and the app user are created once by an
+# administrator, see "ClickHouse access":
 php artisan zones:ch-migrate
 
 # Create the single dashboard user:
@@ -125,10 +124,10 @@ GRANT SELECT ON system.projection_parts TO dropwatch;
 ```
 
 Set `CLICKHOUSE_USER=dropwatch` and `CLICKHOUSE_PASSWORD` in `.env`, then run
-`php artisan zones:ch-migrate`. It creates the tables and projection but never
-creates the database when it already exists. The `system` grants are read-only
-metadata used to detect the database and whether the projection has been
-materialized. The account has no access to any other database.
+`php artisan zones:ch-migrate`. It creates the tables and the projection
+definition but never creates the database when it already exists. The
+`system` grants are read-only metadata used to detect the database. The
+account has no access to any other database.
 
 ## Commands
 
@@ -170,8 +169,9 @@ removed or added in the last 45 days.
 
 Ends with searches force the `name_rev_order` projection (ordered by
 `(tld, name_rev)`), so ClickHouse reads the reversed-name order instead of
-scanning every row. `zones:ch-migrate` adds the projection and materializes it
-once for snapshots that were loaded before it existed.
+scanning every row. `zones:ch-migrate` adds the projection definition; pass
+`--materialize` to rebuild existing parts once. It is off by default because
+the rewrite covers every part of `zone_names`.
 
 ## Scheduling
 
@@ -281,4 +281,4 @@ IP address; further attempts receive `429 Too Many Requests`.
 | `Extraction for {tld} produced no names` | The zone file layout changed. Run `php artisan zones:step extract --tld=com` and inspect the file. |
 | The worker light is red | The queue worker is not running or the scheduler is not running. Check supervisor and the cron entry. |
 | `clickhouse-client failed` | The binary is not on the PATH of the PHP process. Set `CLICKHOUSE_CLIENT_BIN` to the full path. |
-| Ends with returns “Projection ... not used” | Run `php artisan zones:ch-migrate`; it adds and materializes the `name_rev_order` projection. |
+| Ends with returns “Projection ... not used” | Run `php artisan zones:ch-migrate`, then add `--materialize` if the historical parts still lack the `name_rev_order` projection. |
