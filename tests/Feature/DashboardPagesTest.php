@@ -103,29 +103,27 @@ class DashboardPagesTest extends TestCase
         $this->get('/daily')->assertOk()->assertSee('acmeplumbing');
     }
 
-    public function test_the_daily_list_shows_dropped_and_pending_names_separately(): void
+    public function test_the_daily_sidebar_switches_between_drop_and_pending_candidates(): void
     {
-        $this->get('/daily?list=dropped')
+        $this->get('/daily')
             ->assertOk()
-            ->assertSee('Dropped domains')
-            ->assertSee('anothername')
-            ->assertSee('dropped '.now()->format('Y-m-d').' 04:00:00 UTC')
-            ->assertDontSee('newname')
-            ->assertDontSee('acmeplumbing.com');
+            ->assertSee('Drop candidates')
+            ->assertSee('Pending delete candidates')
+            ->assertSee('acmeplumbing.com');
 
         $this->get('/daily?list=pending')
             ->assertOk()
-            ->assertSee('Pending delete')
+            ->assertSee('Pending delete candidates')
             ->assertSee('newname')
-            ->assertDontSee('anothername');
+            ->assertDontSee('acmeplumbing.com');
 
-        $this->getJson('/api/daily?list=dropped')
+        $this->getJson('/api/daily?list=pending')
             ->assertOk()
-            ->assertJsonPath('list', 'dropped')
-            ->assertJsonPath('names.0.domain', 'anothername')
+            ->assertJsonPath('list', 'pending')
+            ->assertJsonPath('names.0.domain', 'newname')
             ->assertJsonPath('pagination.total', 1);
 
-        // An unknown list falls back to the candidates.
+        // An unknown list falls back to the drop candidates.
         $this->get('/daily?list=bogus')
             ->assertOk()
             ->assertSee('acmeplumbing.com');

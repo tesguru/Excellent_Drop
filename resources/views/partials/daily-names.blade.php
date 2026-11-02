@@ -2,8 +2,6 @@
     $names = $names ?? [];
     $pagination = $pagination ?? ['page' => 1, 'per_page' => 25, 'total' => count($names), 'pages' => 1];
     $query = $query ?? '';
-    $date = $date ?? '';
-    $list = $list ?? 'dropped';
 
     $page = (int) ($pagination['page'] ?? 1);
     $pages = max(1, (int) ($pagination['pages'] ?? 1));
@@ -11,19 +9,13 @@
     $perPage = max(1, (int) ($pagination['per_page'] ?? 25));
     $from = $total === 0 ? 0 : (($page - 1) * $perPage) + 1;
     $to = min($page * $perPage, $total);
-
-    $isDropped = $list === 'dropped';
-    $title = $isDropped ? 'Dropped domains' : 'Pending delete';
-    $hint = $isDropped
-        ? 'These names dropped on this date and are free to register.'
-        : 'Names still registered but heading for deletion. The date does not apply.';
 @endphp
 
 <div class="card overflow-hidden">
     <div class="border-b px-4 py-3" style="border-color: var(--border)">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
-                <h2 class="display text-sm font-bold">{{ $title }}</h2>
+                <h2 class="display text-sm font-bold">Pending delete candidates</h2>
                 <span class="chip muted" style="background: var(--surface-2)">{{ number_format($total) }}</span>
 
                 @if ($query !== '')
@@ -33,12 +25,11 @@
                 @endif
             </div>
 
-            <span class="text-xs muted">{{ $hint }}</span>
+            <span class="text-xs muted">.com names still registered but heading for deletion. The date does not apply.</span>
         </div>
 
         <form method="GET" action="{{ url('/daily') }}" class="mt-3 flex flex-wrap items-center gap-2">
-            <input type="hidden" name="date" value="{{ $date }}">
-            <input type="hidden" name="list" value="{{ $list }}">
+            <input type="hidden" name="list" value="pending">
 
             <div class="relative min-w-[12rem] flex-1">
                 <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 muted"
@@ -46,8 +37,8 @@
                     <path stroke-linecap="round" stroke-linejoin="round" d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5.5-1.5L21 21" />
                 </svg>
                 <input name="q" type="search" value="{{ $query }}" autocomplete="off"
-                       aria-label="Search {{ strtolower($title) }} by keyword"
-                       placeholder="Search {{ strtolower($title) }} by keyword..." class="field pl-9">
+                       aria-label="Search pending delete candidates by keyword"
+                       placeholder="Search pending delete candidates by keyword..." class="field pl-9">
             </div>
 
             <button type="submit" class="btn btn-primary">Search</button>
@@ -71,9 +62,9 @@
             <p class="mt-4 text-sm font-semibold">No names found</p>
             <p class="mt-1 text-xs muted">
                 @if ($query !== '')
-                    Nothing matches &ldquo;{{ $query }}&rdquo;{{ $isDropped ? ' for this date' : '' }}.
+                    Nothing matches &ldquo;{{ $query }}&rdquo;.
                 @else
-                    {{ $isDropped ? 'Nothing dropped on this date.' : 'Nothing is pending right now.' }}
+                    Nothing is pending right now.
                 @endif
             </p>
         </div>
@@ -88,8 +79,8 @@
                             {{ $name['domain'] }}
                         </p>
                         <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] muted">
-                            @if ($isDropped && ! empty($name['drop_utc']))
-                                <span>dropped {{ $name['drop_utc'] }} UTC</span>
+                            @if (! empty($name['drop_utc']))
+                                <span>estimated drop {{ $name['drop_utc'] }} UTC</span>
                             @endif
 
                             @if (! empty($name['registrar']))

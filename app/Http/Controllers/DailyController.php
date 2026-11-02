@@ -12,7 +12,7 @@ class DailyController extends Controller
 {
     private const PER_PAGE = 25;
 
-    private const LISTS = ['candidates', 'dropped', 'pending'];
+    private const LISTS = ['candidates', 'pending'];
 
     public function __construct(private readonly CandidateRepository $candidates) {}
 
