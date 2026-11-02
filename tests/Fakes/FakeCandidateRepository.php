@@ -182,7 +182,6 @@ class FakeCandidateRepository extends CandidateRepository
             'candidates' => count($this->candidates),
             'dropped' => count($this->removed),
             'pending' => count($this->added),
-            'redemption' => 0,
         ];
     }
 

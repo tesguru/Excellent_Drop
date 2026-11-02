@@ -94,7 +94,6 @@ class DailyController extends Controller
                 'candidates' => $counts['candidates'] ?? 0,
                 'dropped' => $counts['dropped'] ?? 0,
                 'pending' => $counts['pending'] ?? 0,
-                'redemption' => $counts['redemption'] ?? 0,
             ],
             'pagination' => [
                 'page' => $result['page'],

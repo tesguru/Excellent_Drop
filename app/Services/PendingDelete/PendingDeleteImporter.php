@@ -25,13 +25,16 @@ class PendingDeleteImporter
 
     public const STATUS_DROPPED = 'dropped';
 
+    public const STATUS_REGISTERED = 'registered';
+
     public const STATUS_UNKNOWN = 'unknown';
 
     /** A dropped observation outranks a pending-delete one when lists overlap. */
     private const STATUS_PRIORITY = [
-        self::STATUS_DROPPED => 3,
-        self::STATUS_PENDING_DELETE => 2,
-        self::STATUS_REDEMPTION => 1,
+        self::STATUS_DROPPED => 4,
+        self::STATUS_PENDING_DELETE => 3,
+        self::STATUS_REDEMPTION => 2,
+        self::STATUS_REGISTERED => 1,
         self::STATUS_UNKNOWN => 0,
     ];
 
@@ -267,6 +270,10 @@ class PendingDeleteImporter
             $status === 'dropped' => self::STATUS_DROPPED,
             str_contains($status, 'pending') && str_contains($status, 'delete') => self::STATUS_PENDING_DELETE,
             str_contains($status, 'redemption') => self::STATUS_REDEMPTION,
+            // The dropping-today file also carries names that are still
+            // registered and have no drop time yet; they are registrations,
+            // not deletions, so they never count as pending or dropped.
+            $status === 'registered' => self::STATUS_REGISTERED,
             default => self::STATUS_UNKNOWN,
         };
     }

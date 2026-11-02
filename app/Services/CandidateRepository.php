@@ -327,15 +327,13 @@ class CandidateRepository
             'candidates' => 0,
             'dropped' => 0,
             'pending' => 0,
-            'redemption' => 0,
         ];
 
         if ($this->pendingDeleteReady()) {
             $rows = $this->clickhouse->rows(
                 sprintf(
                     "SELECT countIf(status = 'dropped' AND toDate(drop_utc) = {d:Date}) AS dropped, "
-                    ."countIf(status = 'pending_delete') AS pending, "
-                    ."countIf(status = 'redemption') AS redemption "
+                    ."countIf(status IN ('pending_delete', 'redemption')) AS pending "
                     .'FROM %s.pendingdelete_names FINAL',
                     $this->database,
                 ),
@@ -344,12 +342,11 @@ class CandidateRepository
 
             $counts['dropped'] = (int) ($rows[0]['dropped'] ?? 0);
             $counts['pending'] = (int) ($rows[0]['pending'] ?? 0);
-            $counts['redemption'] = (int) ($rows[0]['redemption'] ?? 0);
 
             // removed/added remain for existing callers; the daily dataset has
             // no zone diff, so "added" now means still in the pending backlog.
             $counts['removed'] = $counts['dropped'];
-            $counts['added'] = $counts['pending'] + $counts['redemption'];
+            $counts['added'] = $counts['pending'];
         } else {
             $rows = $this->clickhouse->rows(
                 sprintf(

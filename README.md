@@ -145,7 +145,7 @@ account has no access to any other database.
 
 | Page | What it shows |
 | --- | --- |
-| Overview | Dropped, pending and redemption counts, the candidates for today, the worker heartbeat, the last run and the zone access that expires soon |
+| Overview | Dropped and pending-delete counts, today's candidates, the worker heartbeat, the last run and the zone access that expires soon |
 | Daily list | Domains that dropped on a chosen day across all supported TLDs, the pending backlog and that day's candidates |
 | Search | Names across every TLD in the latest zone snapshot, with Contains, Starts with, Ends with and Exact modes |
 | Watchlist | Domains to keep an eye on, with a status and notes |
@@ -240,10 +240,14 @@ IP address; further attempts receive `429 Too Many Requests`.
   label is stored without the TLD (`acmeplumbing`), and `pendingdelete_names`
   is keyed by `(tld, name)`, so `acmeplumbing.com` and `acmeplumbing.net` are
   two identities and neither can be duplicated by a repeated import.
-* The lifecycle status is `redemption`, `pending_delete`, `dropped` or
-  `unknown`. A dropped observation outranks a pending-delete one when lists
-  overlap. Every change is appended to `pendingdelete_status_history` with the
-  observation timestamp and the dataset `built_utc`.
+* The lifecycle status is `dropped`, `pending_delete`, `redemption`,
+  `registered` or `unknown`. `registered` is a name the dropping-today file
+  still lists as registered with no drop time, so it is never counted as
+  pending or dropped. A dropped observation outranks a pending-delete one when
+  lists overlap. Every change is appended to `pendingdelete_status_history`
+  with the observation timestamp and the dataset `built_utc`.
+* The pages group the lifecycle into two numbers: **Dropped** and **Pending
+  delete** (pending delete plus redemption, when the source reports it).
 * `com_candidates.tld` and `com_candidates.status` record which identity and
   lifecycle state produced the candidate. `com_candidates.name` holds only
   the label; the API and pages expose the full `domain`.

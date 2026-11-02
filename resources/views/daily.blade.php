@@ -44,7 +44,6 @@
         <div class="ml-auto flex flex-wrap items-center gap-4 text-sm">
             <span class="muted">Dropped <strong class="ml-1 display font-bold" style="color: rgb(251 113 133)">{{ number_format($data['counts']['dropped']) }}</strong></span>
             <span class="muted">Pending <strong class="ml-1 display font-bold" style="color: rgb(52 211 153)">{{ number_format($data['counts']['pending']) }}</strong></span>
-            <span class="muted">Redemption <strong class="ml-1 display font-bold" style="color: rgb(251 191 36)">{{ number_format($data['counts']['redemption']) }}</strong></span>
             <span class="muted">Candidates <strong class="ml-1 display font-bold" style="color: var(--accent)">{{ number_format($data['counts']['candidates']) }}</strong></span>
         </div>
     </form>
@@ -86,7 +85,7 @@
 
         <div class="card overflow-hidden">
             <div class="border-b px-4 py-3" style="border-color: var(--border)">
-                <h2 class="display text-sm font-bold">Pending &amp; redemption</h2>
+                <h2 class="display text-sm font-bold">Pending delete</h2>
                 <p class="mt-0.5 text-xs muted">Names still registered but heading for deletion.</p>
             </div>
             <div class="max-h-96 overflow-y-auto p-4">
