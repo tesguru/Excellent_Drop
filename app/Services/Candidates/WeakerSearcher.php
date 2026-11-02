@@ -52,17 +52,13 @@ class WeakerSearcher
     /** The safety cap for one name; the per-rule limits normally keep us far below it. */
     private const MAX_DETAILS_PER_NAME = 500;
 
-    /** Batched SQL can be a few megabytes, above ClickHouse's 256 KiB default. */
-    private const QUERY_SETTINGS = ['max_query_size' => 67108864];
-
-    /** Suffix queries only run after the projection check; the view cannot
-     *  force it because its pending-delete branch has no projection. */
-    private const SUFFIX_SETTINGS = [
-        'max_query_size' => 67108864,
-    ];
-
     /** Safety cap for one batched prefix/suffix lookup. */
     private const MAX_RANGE_ROWS = 200000;
+
+    /** The search queries run on the same instance as the web reads, and a
+     *  shared ClickHouse kill takes the whole run down with it, so each one
+     *  gets a memory ceiling of its own and spills its sort to disk first. */
+    private const DEFAULT_MAX_MEMORY_MB = 384;
 
     /** False once the name_rev_order projection is known to be missing. */
     private ?bool $endsWithAvailable = null;
@@ -674,7 +670,7 @@ class WeakerSearcher
 
         $stats = [];
 
-        foreach ($this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS) as $row) {
+        foreach ($this->clickhouse->rowsFromSql($sql, $this->querySettings()) as $row) {
             $base = strtolower((string) ($row['base'] ?? ''));
 
             if ($base === '') {
@@ -713,7 +709,7 @@ class WeakerSearcher
             $this->sqlArray($names),
         );
 
-        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
+        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
     }
 
     /**
@@ -740,7 +736,7 @@ class WeakerSearcher
             $this->sqlArray($names),
         );
 
-        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
+        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
     }
 
     /**
@@ -783,7 +779,7 @@ class WeakerSearcher
             self::MAX_RANGE_ROWS,
         );
 
-        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
+        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
     }
 
     /**
@@ -826,7 +822,7 @@ class WeakerSearcher
             self::MAX_RANGE_ROWS,
         );
 
-        return $this->clickhouse->rowsFromSql($sql, self::SUFFIX_SETTINGS);
+        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
     }
 
     /**
@@ -851,7 +847,28 @@ class WeakerSearcher
             $limit,
         );
 
-        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
+        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
+    }
+
+    /**
+     * Settings for every batched corpus query. Batched SQL can be a few
+     * megabytes, above ClickHouse's 256 KiB default, and the sort of a
+     * prefix range is allowed to spill to disk instead of eating the memory
+     * the rest of the server needs.
+     *
+     * @return array<string, int>
+     */
+    private function querySettings(): array
+    {
+        $bytes = max(64, (int) ($this->config['max_memory_mb'] ?? self::DEFAULT_MAX_MEMORY_MB)) * 1048576;
+        $spill = intdiv($bytes, 2);
+
+        return [
+            'max_query_size' => 67108864,
+            'max_memory_usage' => $bytes,
+            'max_bytes_before_external_group_by' => $spill,
+            'max_bytes_before_external_sort' => $spill,
+        ];
     }
 
     /**

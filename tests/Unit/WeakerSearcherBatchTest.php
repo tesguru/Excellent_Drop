@@ -80,6 +80,40 @@ class WeakerSearcherBatchTest extends TestCase
         $this->assertSame([], $results['othername']['weaker_found']);
     }
 
+    public function test_every_corpus_query_gets_a_memory_ceiling(): void
+    {
+        $client = new class extends ClickHouseClient
+        {
+            /** @var array<int, array<string, int>> */
+            public array $settings = [];
+
+            public function __construct() {}
+
+            public function scalar(string $sql, array $params = []): mixed
+            {
+                return 1;
+            }
+
+            public function rowsFromSql(string $sql, array $settings = []): array
+            {
+                $this->settings[] = $settings;
+
+                return [];
+            }
+        };
+
+        (new WeakerSearcher($client, ['max_per_rule' => 50, 'max_memory_mb' => 256], 'zones_test'))
+            ->findMany(['acmeplumbing'], '2026-10-24', ['com', 'net']);
+
+        $this->assertNotEmpty($client->settings);
+
+        foreach ($client->settings as $settings) {
+            $this->assertSame(268435456, $settings['max_memory_usage']);
+            $this->assertSame(134217728, $settings['max_bytes_before_external_sort']);
+            $this->assertSame(134217728, $settings['max_bytes_before_external_group_by']);
+        }
+    }
+
     public function test_ends_with_is_skipped_when_the_projection_is_missing(): void
     {
         $client = new class extends ClickHouseClient

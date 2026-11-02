@@ -44,6 +44,10 @@ class BuildPendingDeleteCandidatesTest extends TestCase
 
         $this->assertFalse($clickhouse->hasCall('DELETE WHERE event_date'));
 
+        // The stream stays open while a whole chunk is searched, so the
+        // client has to wait far longer than its 300 second default.
+        $this->assertSame(3600, $clickhouse->streamSetting('receive_timeout'));
+
         $run = JobRun::query()->firstOrFail();
         $this->assertSame('candidates', $run->step);
         $this->assertSame(JobRun::STATUS_SUCCESS, $run->status);
@@ -125,6 +129,9 @@ class BuildPendingDeleteCandidatesTest extends TestCase
             /** @var array<int, string> */
             public array $executes = [];
 
+            /** @var array<string, mixed> */
+            public array $streamSettings = [];
+
             public int $total = 2;
 
             /**
@@ -160,6 +167,8 @@ class BuildPendingDeleteCandidatesTest extends TestCase
 
             public function streamRows(string $sql, callable $onRow, array $settings = []): void
             {
+                $this->streamSettings = $settings;
+
                 $onRow(['tld' => 'com', 'name' => 'alpha', 'drop_utc' => '2026-11-01 04:02:02']);
                 $onRow(['tld' => 'net', 'name' => 'beta', 'drop_utc' => '2026-11-01 04:02:44']);
             }
@@ -199,6 +208,11 @@ class BuildPendingDeleteCandidatesTest extends TestCase
                 }
 
                 return false;
+            }
+
+            public function streamSetting(string $name): mixed
+            {
+                return $this->streamSettings[$name] ?? null;
             }
         };
     }

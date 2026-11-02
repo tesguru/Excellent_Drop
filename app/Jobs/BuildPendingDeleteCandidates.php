@@ -41,6 +41,14 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
 
     private const INSERT_BATCH_SIZE = 1000;
 
+    /** A chunk is searched while the stream is still open, so the client can
+     *  wait minutes for the next row instead of timing the query out. */
+    private const STREAM_SETTINGS = [
+        'max_query_size' => 67108864,
+        'receive_timeout' => 3600,
+        'send_timeout' => 3600,
+    ];
+
     private readonly string $runId;
 
     /** @var array<string, true> tld + NUL + name already searched for this date */
@@ -323,6 +331,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
                     $flush();
                 }
             },
+            self::STREAM_SETTINGS,
         );
 
         $flush();
