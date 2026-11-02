@@ -76,7 +76,7 @@ class DailyController extends Controller
         $counts = $this->candidates->countsForDate($date);
 
         if ($list !== 'candidates') {
-            $result = $this->candidates->pageOfLifecycleNames($list, $date, $term, self::PER_PAGE, $page);
+            $result = $this->candidates->pageOfPendingCandidates($term, self::PER_PAGE, $page);
 
             return [
                 'date' => $date,
@@ -88,6 +88,7 @@ class DailyController extends Controller
                     'candidates' => $counts['candidates'] ?? 0,
                     'dropped' => $counts['dropped'] ?? 0,
                     'pending' => $counts['pending'] ?? 0,
+                    'pending_candidates' => $counts['pending_candidates'] ?? 0,
                 ],
                 'pagination' => [
                     'page' => $result['page'],
@@ -98,7 +99,7 @@ class DailyController extends Controller
                 ],
                 'removed_names' => $this->candidates->removedNames($date),
                 'added_names' => $this->candidates->addedNames($date),
-                'names' => $result['names'],
+                'candidates' => $result['candidates'],
             ];
         }
 
@@ -129,6 +130,7 @@ class DailyController extends Controller
                 'candidates' => $counts['candidates'] ?? 0,
                 'dropped' => $counts['dropped'] ?? 0,
                 'pending' => $counts['pending'] ?? 0,
+                'pending_candidates' => $counts['pending_candidates'] ?? 0,
             ],
             'pagination' => [
                 'page' => $result['page'],

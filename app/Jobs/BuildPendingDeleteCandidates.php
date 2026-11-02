@@ -18,12 +18,14 @@ use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Build the candidates for the names that dropped on one UTC date.
+ * Build the candidates for the .com names in the PendingDelete feed.
  *
- * The source is the current PendingDelete state (status = dropped), not a
- * zone diff. The weaker-version search still runs against the shared corpus,
- * so the scoring rules, TLD comparison and watchlist are unchanged. Only the
- * dropped name's own TLD is excluded from its exact-match count.
+ * The "dropped" mode scores the names that dropped on one UTC date; the
+ * "pending" mode scores the names currently in redemption or pending delete,
+ * so their weaker versions can be registered before the drop. The
+ * weaker-version search runs against the shared corpus, so the scoring
+ * rules, TLD comparison and watchlist are unchanged. Only the dropped
+ * name's own TLD is excluded from its exact-match count.
  */
 class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
 {
@@ -47,6 +49,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
     public function __construct(
         public readonly string $date,
         public readonly bool $rebuild = false,
+        public readonly string $mode = 'dropped',
     ) {
         $this->runId = (string) Str::uuid();
         $this->onQueue((string) config('pendingdelete.queue', 'zones'));
@@ -55,7 +58,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
 
     public function uniqueId(): string
     {
-        return 'pendingdelete-candidates:'.$this->date;
+        return 'pendingdelete-candidates:'.$this->mode.':'.$this->date;
     }
 
     public function runIdentifier(): string
@@ -74,17 +77,23 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
         try {
             $today = now()->utc()->format('Y-m-d');
 
+            $pending = $this->mode === 'pending';
+
             $total = (int) $clickhouse->scalar(
                 sprintf(
-                    'SELECT count() AS total FROM %s.pendingdelete_names FINAL '
-                    ."WHERE status = {status:String} AND tld = 'com' AND toDate(drop_utc) = {d:Date}",
+                    'SELECT count() AS total FROM %s.pendingdelete_names FINAL WHERE %s',
                     $clickhouse->database(),
+                    $pending
+                        ? "status IN ('pending_delete', 'redemption') AND tld = 'com'"
+                        : "status = {status:String} AND tld = 'com' AND toDate(drop_utc) = {d:Date}",
                 ),
-                ['status' => 'dropped', 'd' => $this->date],
+                $pending ? [] : ['status' => 'dropped', 'd' => $this->date],
             );
 
             if ($total === 0) {
-                $this->skipRun('No dropped domains for '.$this->date.' yet.');
+                $this->skipRun($pending
+                    ? 'No pending-delete names yet.'
+                    : 'No dropped domains for '.$this->date.' yet.');
 
                 return;
             }
@@ -98,23 +107,25 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
             }
 
             // A rerun replaces this date only. Historical candidate days and
-            // the watchlist are never touched.
-            if ($this->rebuild) {
+            // the watchlist are never touched. The pending mode is always
+            // incremental: names are scored once when they first appear.
+            if ($this->rebuild && ! $pending) {
                 $this->deleteCandidatesFor($clickhouse, $this->date);
                 $this->deleteScoredFor($clickhouse, $this->date);
             } else {
-                // A 10-minute import only searches names that are new since
-                // the previous run; names without weaker versions are tracked
-                // too, so they are not searched again.
-                $this->loadScored($clickhouse);
+                // Names are searched once: dropped names per date, pending
+                // names once when they first appear. Names without weaker
+                // versions are tracked too, so they are not searched again.
+                $this->loadScored($clickhouse, $pending);
             }
 
-            $result = $this->build($clickhouse, $searcher, $scorer, $ownership, $today, $tlds, $total);
+            $result = $this->build($clickhouse, $searcher, $scorer, $ownership, $today, $tlds, $total, $pending);
 
             $this->finishRun($result['candidates'], sprintf(
-                'Built %d candidate(s) from %s new dropped name(s) (%s already scored) in %d chunk(s) in %.1fs (%d TLDs in corpus)',
+                'Built %d candidate(s) from %s new %s name(s) (%s already scored) in %d chunk(s) in %.1fs (%d TLDs in corpus)',
                 $result['candidates'],
                 number_format($result['searched']),
+                $pending ? 'pending' : 'dropped',
                 number_format(max(0, $result['read'] - $result['searched'])),
                 $result['chunks'],
                 $result['seconds'],
@@ -139,6 +150,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
         string $today,
         array $tlds,
         int $total,
+        bool $pending,
     ): array {
         $chunkSize = max(1, (int) config('zones.weaker.chunk_size', 5000));
 
@@ -169,6 +181,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
             $total,
             $scoredAt,
             $started,
+            $pending,
         ): void {
             if ($tld === null || $chunk === []) {
                 return;
@@ -199,6 +212,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
                     'event_date' => $this->date,
                     'tld' => $currentTld,
                     'name' => $name,
+                    'mode' => $pending ? 'pending' : 'dropped',
                     'scored_at' => $scoredAt,
                 ];
 
@@ -256,10 +270,11 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
                 'bytes_done' => $read,
                 'bytes_total' => $total,
                 'message' => sprintf(
-                    'Chunk %d: %s %s dropped, %s candidates (%.1fs)',
+                    'Chunk %d: %s %s %s, %s candidates (%.1fs)',
                     $chunks,
                     number_format(count($names)),
                     $currentTld,
+                    $pending ? 'pending' : 'dropped',
                     number_format(count($rows)),
                     microtime(true) - $started,
                 ),
@@ -275,15 +290,18 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
             ]);
         };
 
+        $sql = sprintf(
+            'SELECT tld, name, toString(drop_utc) AS drop_utc '
+            .'FROM %s.pendingdelete_names FINAL WHERE ',
+            $clickhouse->database(),
+        );
+        $sql .= $pending
+            ? "status IN ('pending_delete', 'redemption') AND tld = 'com' "
+            : "status = 'dropped' AND tld = 'com' AND toDate(drop_utc) = ".$this->sqlString($this->date).' ';
+        $sql .= 'ORDER BY tld, name';
+
         $clickhouse->streamRows(
-            sprintf(
-                'SELECT tld, name, toString(drop_utc) AS drop_utc '
-                .'FROM %s.pendingdelete_names FINAL '
-                ."WHERE status = 'dropped' AND tld = 'com' AND toDate(drop_utc) = %s "
-                .'ORDER BY tld, name',
-                $clickhouse->database(),
-                $this->sqlString($this->date),
-            ),
+            $sql,
             function (array $row) use (&$tld, &$chunk, $chunkSize, $flush): void {
                 $rowTld = strtolower((string) ($row['tld'] ?? ''));
                 $name = strtolower((string) ($row['name'] ?? ''));
@@ -353,7 +371,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
             'event_date' => $date,
             'tld' => $tld,
             'name' => $name,
-            'status' => 'dropped',
+            'status' => $this->mode === 'pending' ? 'pending_delete' : 'dropped',
             'drop_utc' => $dropUtc,
             'weaker_found' => array_values($result['weaker_found']),
             'weaker_types' => array_values($result['weaker_types']),
@@ -389,7 +407,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
     {
         $clickhouse->execute(
             sprintf(
-                'ALTER TABLE %s.com_candidates DELETE WHERE event_date = {d:Date} SETTINGS mutations_sync = 1',
+                "ALTER TABLE %s.com_candidates DELETE WHERE event_date = {d:Date} AND status IN ('dropped', '') SETTINGS mutations_sync = 1",
                 $clickhouse->database(),
             ),
             ['d' => $date],
@@ -400,22 +418,23 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
     {
         $clickhouse->execute(
             sprintf(
-                'ALTER TABLE %s.pendingdelete_scored DELETE WHERE event_date = {d:Date} SETTINGS mutations_sync = 1',
+                "ALTER TABLE %s.pendingdelete_scored DELETE WHERE event_date = {d:Date} AND mode = 'dropped' SETTINGS mutations_sync = 1",
                 $clickhouse->database(),
             ),
             ['d' => $date],
         );
     }
 
-    private function loadScored(ClickHouseClient $clickhouse): void
+    private function loadScored(ClickHouseClient $clickhouse, bool $pending): void
     {
-        $rows = $clickhouse->rows(
-            sprintf(
-                'SELECT DISTINCT tld, name FROM %s.pendingdelete_scored WHERE event_date = {d:Date}',
-                $clickhouse->database(),
-            ),
-            ['d' => $this->date],
+        $sql = sprintf(
+            'SELECT DISTINCT tld, name FROM %s.pendingdelete_scored WHERE mode = %s%s',
+            $clickhouse->database(),
+            $pending ? "'pending'" : "'dropped'",
+            $pending ? '' : ' AND event_date = {d:Date}',
         );
+
+        $rows = $clickhouse->rows($sql, $pending ? [] : ['d' => $this->date]);
 
         foreach ($rows as $row) {
             $tld = strtolower((string) ($row['tld'] ?? ''));

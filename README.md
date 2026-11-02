@@ -195,9 +195,12 @@ The scheduler keeps the imports aligned with the manifest rebuild cadence
 Each command queues `ImportPendingDeleteList`; every TLD file is imported
 independently, so one failed download does not stop the others. A successful
 import of `dropping-today` or `dropped-yesterday` then queues
-`BuildPendingDeleteCandidates` for the drop date. Candidate building is
-incremental and records every searched identity in `pendingdelete_scored`, so
-a ten-minute run only scores the names that are new.
+`BuildPendingDeleteCandidates` for the drop date; the `pending` import queues
+the pending mode, which scores the names currently in redemption or pending
+delete so their weaker versions can be registered before the drop. Candidate
+building is incremental and records every searched identity in
+`pendingdelete_scored`, so a ten-minute run only scores the names that are
+new.
 
 The scheduler also runs the worker heartbeat every minute, the
 `zones:clear-stuck` housekeeping command hourly, and `zones:refresh-corpus` at
@@ -228,6 +231,13 @@ recorded in the same chunk, so a crash redoes at most one chunk. A `--force`
 run deletes only that date's candidate rows and scored identities before it
 rebuilds; historical days, the status history and the watchlist are never
 touched.
+
+The pending mode scores every name that is in redemption or pending delete
+once, with `status = 'pending_delete'` rows in `com_candidates`. It is always
+incremental: a rebuild fills only what is missing and never deletes. The
+daily sidebar shows these rows only while the name is still pending in the
+feed, so a scored name disappears from the list as soon as it drops or is
+registered again. Drop-candidate reads ignore the pending rows.
 
 The queue workers are supervisor programs, see
 `deploy/supervisor/dropwatch-worker.conf`.

@@ -57,7 +57,9 @@ ORDER BY (event_date, score);
 
 -- Existing installations need the column added explicitly: CREATE TABLE IF
 -- NOT EXISTS does not modify a table that already exists. Rows written before
--- the PendingDelete source keep tld='com' and an empty status.
+-- the PendingDelete source keep tld='com' and an empty status; both the empty
+-- status and 'dropped' are drop candidates, 'pending_delete' rows are the
+-- pending candidates for names heading for deletion.
 ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `is_short` UInt8 DEFAULT 0;
 ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `exact_tld_count` UInt16 DEFAULT 0;
 ALTER TABLE zones.com_candidates ADD COLUMN IF NOT EXISTS `tld` LowCardinality(String) DEFAULT 'com';
@@ -126,7 +128,9 @@ TTL observed_at + INTERVAL 6 HOUR DELETE;
 
 -- Identities already searched for weaker versions, including names that had
 -- none. A 10-minute import only searches the names that appeared since the
--- previous run; rebuilding one date clears its rows first.
+-- previous run; rebuilding one date clears its rows first. The mode keeps
+-- pending and dropped scoring independent: a name scored while pending is
+-- searched again when it drops.
 CREATE TABLE IF NOT EXISTS zones.pendingdelete_scored
 (
     `event_date` Date,
@@ -136,6 +140,9 @@ CREATE TABLE IF NOT EXISTS zones.pendingdelete_scored
 )
 ENGINE = ReplacingMergeTree(scored_at)
 ORDER BY (event_date, tld, name);
+
+-- Rows written before the pending mode existed are dropped-mode scores.
+ALTER TABLE zones.pendingdelete_scored ADD COLUMN IF NOT EXISTS `mode` LowCardinality(String) DEFAULT 'dropped';
 
 -- The corpus the weaker-version search reads. It is the newest zone snapshot
 -- plus every name that is currently registered, pending delete or in

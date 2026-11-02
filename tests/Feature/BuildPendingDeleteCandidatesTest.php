@@ -40,6 +40,7 @@ class BuildPendingDeleteCandidatesTest extends TestCase
         $this->assertCount(2, $scored);
         $this->assertSame('alpha', $scored[0]['name']);
         $this->assertSame('2026-11-01', $scored[0]['event_date']);
+        $this->assertSame('dropped', $scored[0]['mode']);
 
         $this->assertFalse($clickhouse->hasCall('DELETE WHERE event_date'));
 
@@ -59,6 +60,8 @@ class BuildPendingDeleteCandidatesTest extends TestCase
 
         $this->assertTrue($clickhouse->hasCall('ALTER TABLE zones_test.com_candidates DELETE'));
         $this->assertTrue($clickhouse->hasCall('ALTER TABLE zones_test.pendingdelete_scored DELETE'));
+        $this->assertTrue($clickhouse->hasCall("AND status IN ('dropped', '')"));
+        $this->assertTrue($clickhouse->hasCall("AND mode = 'dropped'"));
         $this->assertSame([['alpha'], 'com'], $searcher->calls[0]);
     }
 
@@ -80,6 +83,33 @@ class BuildPendingDeleteCandidatesTest extends TestCase
         $scored = $clickhouse->rowsFor('zones_test.pendingdelete_scored');
         $this->assertCount(1, $scored);
         $this->assertSame('beta', $scored[0]['name']);
+    }
+
+    public function test_pending_mode_scores_the_pending_names_and_never_clears(): void
+    {
+        $clickhouse = $this->clickhouse();
+        $searcher = $this->searcher();
+
+        $job = new BuildPendingDeleteCandidates('2026-11-02', true, 'pending');
+        $job->handle($clickhouse, $searcher, app(Scorer::class), app(OwnerIndependence::class));
+
+        // Pending scoring is always incremental: even a rebuild only fills
+        // what is missing, it never deletes a date.
+        $this->assertFalse($clickhouse->hasCall('ALTER TABLE'));
+
+        $candidates = $clickhouse->rowsFor('zones_test.com_candidates');
+        $this->assertCount(2, $candidates);
+        $this->assertSame('pending_delete', $candidates[0]['status']);
+        $this->assertSame('2026-11-02', $candidates[0]['event_date']);
+        $this->assertSame('2026-11-01 04:02:02', $candidates[0]['drop_utc']);
+
+        $this->assertSame([['alpha'], 'com'], $searcher->calls[0]);
+        $this->assertSame([['beta'], 'net'], $searcher->calls[1]);
+
+        $scored = $clickhouse->rowsFor('zones_test.pendingdelete_scored');
+        $this->assertCount(2, $scored);
+        $this->assertSame('2026-11-02', $scored[0]['event_date']);
+        $this->assertSame('pending', $scored[0]['mode']);
     }
 
     /**

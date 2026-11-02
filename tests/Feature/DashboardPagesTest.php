@@ -53,6 +53,23 @@ class DashboardPagesTest extends TestCase
             ],
             removed: ['anothername'],
             added: ['newname'],
+            pendingCandidates: [
+                [
+                    'event_date' => now()->format('Y-m-d'),
+                    'name' => 'pendingpick',
+                    'domain' => 'pendingpick.com',
+                    'status' => 'pending_delete',
+                    'weaker_found' => ['pending-pick.net'],
+                    'weaker_types' => ['hyphen'],
+                    'weaker_count' => 1,
+                    'tld_count' => 1,
+                    'exact_tld_count' => 2,
+                    'is_short' => false,
+                    'score' => 84.0,
+                    'estimated_drop_date' => now()->addDays(5)->format('Y-m-d'),
+                    'watchlisted' => false,
+                ],
+            ],
         ));
 
         $this->app->instance(ZoneSearch::class, new FakeZoneSearch(payload: [
@@ -114,13 +131,14 @@ class DashboardPagesTest extends TestCase
         $this->get('/daily?list=pending')
             ->assertOk()
             ->assertSee('Pending delete candidates')
-            ->assertSee('newname')
+            ->assertSee('pendingpick.com')
             ->assertDontSee('acmeplumbing.com');
 
         $this->getJson('/api/daily?list=pending')
             ->assertOk()
             ->assertJsonPath('list', 'pending')
-            ->assertJsonPath('names.0.domain', 'newname')
+            ->assertJsonPath('candidates.0.domain', 'pendingpick.com')
+            ->assertJsonPath('counts.pending_candidates', 1)
             ->assertJsonPath('pagination.total', 1);
 
         // An unknown list falls back to the drop candidates.

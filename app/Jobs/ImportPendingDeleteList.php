@@ -79,9 +79,16 @@ class ImportPendingDeleteList implements ShouldBeUnique, ShouldQueue
             }
         }
 
-        // The pending backlog is not dropped yet, so it does not create
-        // candidates. The other two lists know which day the names drop.
-        if ($this->list !== 'pending') {
+        // The pending backlog is not dropped yet, so it is scored once per
+        // name as it appears; the other two lists know which day the names
+        // drop.
+        if ($this->list === 'pending') {
+            BuildPendingDeleteCandidates::dispatch(
+                now()->utc()->format('Y-m-d'),
+                false,
+                'pending',
+            );
+        } else {
             foreach (array_keys($dates) as $date) {
                 BuildPendingDeleteCandidates::dispatch((string) $date, $this->force);
             }

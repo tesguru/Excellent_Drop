@@ -13,7 +13,7 @@
             <nav class="flex flex-col gap-1 p-2" aria-label="Daily lists">
                 @foreach ([
                     'candidates' => ['label' => 'Drop candidates', 'count' => $data['counts']['candidates']],
-                    'pending' => ['label' => 'Pending delete candidates', 'count' => $data['counts']['pending']],
+                    'pending' => ['label' => 'Pending delete candidates', 'count' => $data['counts']['pending_candidates']],
                 ] as $listKey => $entry)
                     @php
                         $href = $listKey === 'candidates'
@@ -93,12 +93,10 @@
                     'exactVariations' => $data['exact_variations'],
                 ])
             @else
-                @include('partials.daily-names', [
-                    'names' => $data['names'],
+                @include('partials.daily-pending-candidates', [
+                    'candidates' => $data['candidates'],
                     'pagination' => $data['pagination'],
                     'query' => $data['query'],
-                    'date' => $date,
-                    'list' => $list,
                 ])
             @endif
         </div>
