@@ -98,7 +98,7 @@ class RefreshCorpusView extends Command
         $clauses = [];
 
         foreach ($byDate as $date => $tlds) {
-            $clauses[] = '(tld IN '.json_encode(array_values($tlds), JSON_THROW_ON_ERROR)
+            $clauses[] = '(tld IN '.$this->sqlArray(array_values($tlds))
                 .' AND snapshot_date = '.$this->sqlString($date).')';
         }
 
@@ -123,6 +123,14 @@ class RefreshCorpusView extends Command
     private function quoteIdentifier(string $name): string
     {
         return '`'.str_replace('`', '``', $name).'`';
+    }
+
+    /**
+     * @param  array<int, string>  $values
+     */
+    private function sqlArray(array $values): string
+    {
+        return '['.implode(', ', array_map(fn (string $v): string => $this->sqlString($v), $values)).']';
     }
 
     private function sqlString(string $value): string

@@ -23,9 +23,11 @@ class RefreshCorpusViewTest extends TestCase
         $ddl = $clickhouse->executes[0];
 
         // TLDs that share a date become one clause, so ClickHouse can still
-        // prune partitions and use the (tld, name) primary key.
-        $this->assertStringContainsString('(tld IN ["com","net"] AND snapshot_date = \'2026-10-25\')', $ddl);
-        $this->assertStringContainsString('(tld IN ["app"] AND snapshot_date = \'2026-11-01\')', $ddl);
+        // prune partitions and use the (tld, name) primary key. The elements
+        // are single-quoted: double quotes make ClickHouse read them as
+        // identifiers, not strings.
+        $this->assertStringContainsString("(tld IN ['com', 'net'] AND snapshot_date = '2026-10-25')", $ddl);
+        $this->assertStringContainsString("(tld IN ['app'] AND snapshot_date = '2026-11-01')", $ddl);
         $this->assertStringContainsString('CREATE OR REPLACE VIEW `zones_test`.weaker_corpus', $ddl);
 
         // The pending-delete branch stays: those names are registrations that
@@ -44,11 +46,11 @@ class RefreshCorpusViewTest extends TestCase
 
     public function test_a_quoted_tld_cannot_break_out_of_the_array_literal(): void
     {
-        $clickhouse = $this->clickhouse([['tld' => 'a"b', 'latest' => '2026-11-01']]);
+        $clickhouse = $this->clickhouse([['tld' => "a'b", 'latest' => '2026-11-01']]);
 
         $this->artisan('zones:refresh-corpus')->assertOk();
 
-        $this->assertStringContainsString('(tld IN ["a\"b"]', $clickhouse->executes[0]);
+        $this->assertStringContainsString("(tld IN ['a\\'b']", $clickhouse->executes[0]);
     }
 
     /**
