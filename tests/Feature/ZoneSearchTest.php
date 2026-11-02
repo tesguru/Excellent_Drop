@@ -266,6 +266,30 @@ class ZoneSearchTest extends TestCase
     }
 
     /**
+     * The corpus labels every row with today, so the zone branch must read the
+     * newest snapshot from the table column. Naming the output column
+     * snapshot_date in the same SELECT shadows it and matches nothing.
+     */
+    public function test_the_corpus_keeps_a_snapshot_older_than_today(): void
+    {
+        $this->loadZones(
+            ['com' => ['acmeplumbing'], 'net' => ['acme']],
+            now()->subDay()->format('Y-m-d'),
+        );
+
+        $rows = $this->clickhouse->rows(
+            'SELECT name, tld FROM '.self::DATABASE.'.weaker_corpus '
+            .'WHERE snapshot_date = {d:Date} ORDER BY tld, name',
+            ['d' => now()->format('Y-m-d')],
+        );
+
+        $this->assertSame(
+            ['acme.net', 'acmeplumbing.com'],
+            array_map(fn (array $row) => $row['name'].'.'.$row['tld'], $rows),
+        );
+    }
+
+    /**
      * @param  array<string, mixed>  $overrides
      * @return array<string, mixed>
      */
@@ -359,7 +383,7 @@ class ZoneSearchTest extends TestCase
 
     private function truncate(): void
     {
-        foreach (['zone_names', 'zone_events', 'com_candidates'] as $table) {
+        foreach (['zone_names', 'zone_events', 'com_candidates', 'pendingdelete_names'] as $table) {
             $this->clickhouse->execute('TRUNCATE TABLE '.self::DATABASE.'.'.$table);
         }
     }

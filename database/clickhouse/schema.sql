@@ -141,10 +141,18 @@ ORDER BY (event_date, tld, name);
 -- snapshot plus every name that is currently in redemption or pending delete.
 -- Dropped names are excluded because they are no longer registrations. This
 -- keeps TLD comparison working without downloading CZDS files every day.
+--
+-- The zone branch is wrapped in a subquery: naming the output column
+-- snapshot_date in the same SELECT would shadow the zone_names column, so the
+-- filter would compare today's date against the newest snapshot and match
+-- nothing.
 CREATE OR REPLACE VIEW zones.weaker_corpus AS
 SELECT name, name_rev, tld, ns, toDate(now('UTC')) AS snapshot_date
-FROM zones.zone_names
-WHERE snapshot_date = (SELECT max(snapshot_date) FROM zones.zone_names)
+FROM (
+    SELECT name, name_rev, tld, ns
+    FROM zones.zone_names
+    WHERE snapshot_date = (SELECT max(snapshot_date) FROM zones.zone_names)
+)
 UNION ALL
 SELECT name, reverse(name) AS name_rev, tld, '' AS ns, toDate(now('UTC')) AS snapshot_date
 FROM zones.pendingdelete_names FINAL
