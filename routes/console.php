@@ -28,6 +28,15 @@ foreach ((array) config('pendingdelete.schedule', []) as $list => $cron) {
 // The CZDS zone pipeline is kept for manual backfills only:
 //   php artisan zones:run
 
+// The corpus pins each TLD to its newest zone snapshot, so it is rewritten
+// once a day and after any manual zone load:
+//   php artisan zones:refresh-corpus
+Schedule::command('zones:refresh-corpus')
+    ->dailyAt('00:20')
+    ->timezone('UTC')
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // Worker heartbeat. The light in the dashboard turns red when this stops.
 Schedule::job(new WorkerHeartbeat)
     ->everyMinute()

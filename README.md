@@ -36,10 +36,11 @@ Blade, vanilla JavaScript and a Vite/Tailwind build.
    every domain shares the same nameservers. It never performs RDAP or website
    lookups. The candidate build is incremental: a 10-minute import only
    searches the identities that appeared since the previous run.
-6. The comparison corpus is `weaker_corpus`: the latest CZDS zone snapshot
-   plus every name currently in redemption or pending delete. The zone
-   pipeline is no longer scheduled; it remains available for manual backfills
-   with `php artisan zones:run`.
+6. The comparison corpus is `weaker_corpus`: every TLD's newest zone snapshot
+   plus every name currently registered, pending delete or in redemption. The
+   zone pipeline is no longer scheduled; it remains available for manual
+   backfills with `php artisan zones:run`, and `php artisan
+   zones:refresh-corpus` folds whatever snapshots exist into the corpus.
 
 ## Network policy
 
@@ -107,7 +108,7 @@ No credentials are needed for PendingDelete.net. Fill in `CZDS_USERNAME` and
 | `pendingdelete_status_history` | Append-only log of every status transition with its observation time |
 | `pendingdelete_staging` | Per-import buffer, removed after a successful merge and by TTL after 6 hours |
 | `pendingdelete_scored` | Identities already searched for weaker versions, so incremental runs do not repeat work |
-| `weaker_corpus` (view) | Latest zone snapshot plus every name still in redemption or pending delete |
+| `weaker_corpus` (view) | Every name still registered, pending delete or in redemption, plus each TLD's newest zone snapshot as pinned by `zones:refresh-corpus` |
 
 ### ClickHouse access
 
@@ -139,6 +140,7 @@ account has no access to any other database.
 | `php artisan zones:retry` | Requeue the failed steps of the last runs |
 | `php artisan zones:clear-stuck` | Mark job runs that are stuck in `running` as failed |
 | `php artisan zones:ch-migrate` | Create or update the ClickHouse tables and the corpus view |
+| `php artisan zones:refresh-corpus` | Rewrite the corpus view with each TLD pinned to its own newest zone snapshot |
 | `php artisan dropwatch:user {email}` | Create or update the dashboard user |
 
 ## Dashboard
@@ -197,9 +199,11 @@ import of `dropping-today` or `dropped-yesterday` then queues
 incremental and records every searched identity in `pendingdelete_scored`, so
 a ten-minute run only scores the names that are new.
 
-The scheduler also runs the worker heartbeat every minute and the
-`zones:clear-stuck` housekeeping command hourly. The heartbeat is what the
-status light in the header shows, so a stopped worker is visible at a glance.
+The scheduler also runs the worker heartbeat every minute, the
+`zones:clear-stuck` housekeeping command hourly, and `zones:refresh-corpus` at
+00:20 UTC so a TLD whose zone file was loaded on an earlier date stays in the
+corpus. The heartbeat is what the status light in the header shows, so a
+stopped worker is visible at a glance.
 
 ### Retention
 

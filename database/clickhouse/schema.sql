@@ -137,10 +137,17 @@ CREATE TABLE IF NOT EXISTS zones.pendingdelete_scored
 ENGINE = ReplacingMergeTree(scored_at)
 ORDER BY (event_date, tld, name);
 
--- The corpus the weaker-version search reads. It is the latest full zone
--- snapshot plus every name that is currently in redemption or pending delete.
--- Dropped names are excluded because they are no longer registrations. This
--- keeps TLD comparison working without downloading CZDS files every day.
+-- The corpus the weaker-version search reads. It is the newest zone snapshot
+-- plus every name that is currently registered, pending delete or in
+-- redemption. Dropped names are excluded because they are no longer
+-- registrations. This keeps TLD comparison working without downloading CZDS
+-- files every day.
+--
+-- This is the starting definition: it takes the single newest snapshot date,
+-- so a TLD whose last load was earlier drops out of the corpus. `php artisan
+-- zones:refresh-corpus` rewrites the view with each TLD pinned to its own
+-- newest snapshot as literals, which is what keeps partition pruning and the
+-- (tld, name) primary key working.
 --
 -- The zone branch is wrapped in a subquery: naming the output column
 -- snapshot_date in the same SELECT would shadow the zone_names column, so the
