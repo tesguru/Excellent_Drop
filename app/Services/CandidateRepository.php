@@ -235,7 +235,7 @@ class CandidateRepository
             $rows = $this->clickhouse->rows(
                 sprintf(
                     'SELECT DISTINCT name, tld FROM %s.pendingdelete_names FINAL '
-                    .'WHERE status = {status:String} AND toDate(drop_utc) = {d:Date} '
+                    ."WHERE status = {status:String} AND tld = 'com' AND toDate(drop_utc) = {d:Date} "
                     .'ORDER BY name, tld LIMIT {lim:UInt32}',
                     $this->database,
                 ),
@@ -269,7 +269,7 @@ class CandidateRepository
             $rows = $this->clickhouse->rows(
                 sprintf(
                     'SELECT name, tld FROM %s.pendingdelete_names FINAL '
-                    ."WHERE status IN ('pending_delete', 'redemption') "
+                    ."WHERE status IN ('pending_delete', 'redemption') AND tld = 'com' "
                     .'ORDER BY name, tld LIMIT {lim:UInt32}',
                     $this->database,
                 ),
@@ -307,8 +307,8 @@ class CandidateRepository
         $params = $list === 'dropped' ? ['d' => $date] : [];
 
         $where = $list === 'dropped'
-            ? "status = 'dropped' AND toDate(drop_utc) = {d:Date}"
-            : "status IN ('pending_delete', 'redemption')";
+            ? "status = 'dropped' AND tld = 'com' AND toDate(drop_utc) = {d:Date}"
+            : "status IN ('pending_delete', 'redemption') AND tld = 'com'";
 
         $order = $list === 'dropped' ? 'ORDER BY drop_utc, name, tld' : 'ORDER BY name, tld';
 
@@ -382,30 +382,6 @@ class CandidateRepository
     }
 
     /**
-     * How many domains dropped between two dates.
-     */
-    public function removedCount(string $from, string $to): int
-    {
-        [$table, $where] = $this->pendingDeleteReady()
-            ? [
-                $this->database.'.pendingdelete_names FINAL',
-                'status = {status:String} AND toDate(drop_utc) >= {from:Date} AND toDate(drop_utc) <= {to:Date}',
-            ]
-            : [
-                $this->database.'.zone_events',
-                'tld = {tld:String} AND event = {event:String} '
-                .'AND event_date >= {from:Date} AND event_date <= {to:Date}',
-            ];
-
-        $rows = $this->clickhouse->rows(
-            sprintf('SELECT count() AS total FROM %s WHERE %s', $table, $where),
-            ['status' => 'dropped', 'tld' => 'com', 'event' => 'removed', 'from' => $from, 'to' => $to],
-        );
-
-        return (int) ($rows[0]['total'] ?? 0);
-    }
-
-    /**
      * @return array<string, int>
      */
     public function countsForDate(string $date): array
@@ -421,8 +397,8 @@ class CandidateRepository
         if ($this->pendingDeleteReady()) {
             $rows = $this->clickhouse->rows(
                 sprintf(
-                    "SELECT countIf(status = 'dropped' AND toDate(drop_utc) = {d:Date}) AS dropped, "
-                    ."countIf(status IN ('pending_delete', 'redemption')) AS pending "
+                    "SELECT countIf(status = 'dropped' AND tld = 'com' AND toDate(drop_utc) = {d:Date}) AS dropped, "
+                    ."countIf(status IN ('pending_delete', 'redemption') AND tld = 'com') AS pending "
                     .'FROM %s.pendingdelete_names FINAL',
                     $this->database,
                 ),

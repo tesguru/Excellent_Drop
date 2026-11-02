@@ -77,7 +77,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
             $total = (int) $clickhouse->scalar(
                 sprintf(
                     'SELECT count() AS total FROM %s.pendingdelete_names FINAL '
-                    .'WHERE status = {status:String} AND toDate(drop_utc) = {d:Date}',
+                    ."WHERE status = {status:String} AND tld = 'com' AND toDate(drop_utc) = {d:Date}",
                     $clickhouse->database(),
                 ),
                 ['status' => 'dropped', 'd' => $this->date],
@@ -279,7 +279,7 @@ class BuildPendingDeleteCandidates implements ShouldBeUnique, ShouldQueue
             sprintf(
                 'SELECT tld, name, toString(drop_utc) AS drop_utc '
                 .'FROM %s.pendingdelete_names FINAL '
-                ."WHERE status = 'dropped' AND toDate(drop_utc) = %s "
+                ."WHERE status = 'dropped' AND tld = 'com' AND toDate(drop_utc) = %s "
                 .'ORDER BY tld, name',
                 $clickhouse->database(),
                 $this->sqlString($this->date),

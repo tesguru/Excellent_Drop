@@ -213,11 +213,6 @@ class FakeCandidateRepository extends CandidateRepository
         ];
     }
 
-    public function removedCount(string $from, string $to): int
-    {
-        return count($this->removed);
-    }
-
     public function countsForDate(string $date): array
     {
         return [
