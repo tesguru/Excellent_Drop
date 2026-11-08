@@ -2,11 +2,13 @@
     use Illuminate\Support\Str;
 
     $candidates = $candidates ?? [];
+    $action = $action ?? url('/daily');
     $pagination = $pagination ?? ['page' => 1, 'per_page' => 25, 'total' => count($candidates), 'pages' => 1];
     $query = $query ?? '';
     $shortOnly = $shortOnly ?? false;
     $endingsOnly = $endingsOnly ?? false;
     $date = $date ?? '';
+    $dates = $dates ?? [];
     $minVariations = $minVariations ?? null;
     $maxVariations = $maxVariations ?? null;
     $exactVariations = $exactVariations ?? null;
@@ -82,8 +84,7 @@
             </div>
         </div>
 
-        <form method="GET" action="{{ url('/daily') }}" class="mt-3 flex flex-wrap items-center gap-2">
-            <input type="hidden" name="date" value="{{ $date }}">
+        <form method="GET" action="{{ $action }}" class="mt-3 space-y-3">
             @if ($shortOnly)
                 <input type="hidden" name="short" value="1">
             @endif
@@ -91,38 +92,58 @@
                 <input type="hidden" name="endings" value="1">
             @endif
 
-            <div class="relative min-w-[12rem] flex-1">
-                <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 muted"
-                     fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5.5-1.5L21 21" />
-                </svg>
-                <input id="daily-q" name="q" type="search" value="{{ $query }}" autocomplete="off"
-                       aria-label="Search candidates by keyword"
-                       placeholder="Search candidates by keyword..." class="field pl-9">
+            <div class="flex flex-wrap items-center gap-2">
+                <label for="daily-date" class="label">Date</label>
+                <input id="daily-date" name="date" type="date" value="{{ $date }}" data-auto-submit
+                       class="field w-auto">
+
+                @if (count($dates) > 0)
+                    <span class="ml-1 text-xs muted">Days with candidates</span>
+
+                    @foreach (array_slice($dates, 0, 12) as $available)
+                        <a href="{{ request()->fullUrlWithQuery(['date' => $available, 'page' => null]) }}"
+                           class="chip border transition {{ $available === $date ? 'border-transparent text-[color:var(--accent-ink)]' : 'muted border-transparent hover:text-[color:var(--text)]' }}"
+                           @if ($available === $date) style="background: var(--accent)" @else style="background: rgb(var(--glow) / 0.1)" @endif>
+                            {{ $available }}
+                        </a>
+                    @endforeach
+                @endif
             </div>
 
-            <div class="flex flex-wrap items-center gap-1.5">
-                <span class="text-xs muted">Variations</span>
-                <input id="daily-min-variations" name="min_variations" type="number" min="0" step="1"
-                       value="{{ $minVariations }}" placeholder="min" aria-label="Minimum variations"
-                       class="field w-[4.5rem] px-2 py-1.5 text-xs">
-                <input id="daily-exact-variations" name="exact_variations" type="number" min="0" step="1"
-                       value="{{ $exactVariations }}" placeholder="exact" aria-label="Exact variations"
-                       title="Exact count overrides min and max"
-                       class="field w-[4.5rem] px-2 py-1.5 text-xs">
-                <input id="daily-max-variations" name="max_variations" type="number" min="0" step="1"
-                       value="{{ $maxVariations }}" placeholder="max" aria-label="Maximum variations"
-                       class="field w-[4.5rem] px-2 py-1.5 text-xs">
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="relative min-w-[12rem] flex-1">
+                    <svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 muted"
+                         fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5.5-1.5L21 21" />
+                    </svg>
+                    <input id="daily-q" name="q" type="search" value="{{ $query }}" autocomplete="off" data-auto-submit
+                           aria-label="Search candidates by keyword"
+                           placeholder="Search candidates by keyword..." class="field pl-9">
+                </div>
+
+                <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="text-xs muted">Variations</span>
+                    <input id="daily-min-variations" name="min_variations" type="number" min="0" step="1" data-auto-submit
+                           value="{{ $minVariations }}" placeholder="min" aria-label="Minimum variations"
+                           class="field w-[4.5rem] px-2 py-1.5 text-xs">
+                    <input id="daily-exact-variations" name="exact_variations" type="number" min="0" step="1" data-auto-submit
+                           value="{{ $exactVariations }}" placeholder="exact" aria-label="Exact variations"
+                           title="Exact count overrides min and max"
+                           class="field w-[4.5rem] px-2 py-1.5 text-xs">
+                    <input id="daily-max-variations" name="max_variations" type="number" min="0" step="1" data-auto-submit
+                           value="{{ $maxVariations }}" placeholder="max" aria-label="Maximum variations"
+                           class="field w-[4.5rem] px-2 py-1.5 text-xs">
+                </div>
+
+                <button type="submit" class="btn btn-primary">Search</button>
+
+                @if ($query !== '' || $hasVariationFilter)
+                    <a href="{{ request()->fullUrlWithQuery(['q' => null, 'min_variations' => null, 'max_variations' => null, 'exact_variations' => null, 'page' => null]) }}"
+                       class="btn btn-ghost">
+                        Clear
+                    </a>
+                @endif
             </div>
-
-            <button type="submit" class="btn btn-primary">Search</button>
-
-            @if ($query !== '' || $hasVariationFilter)
-                <a href="{{ request()->fullUrlWithQuery(['q' => null, 'min_variations' => null, 'max_variations' => null, 'exact_variations' => null, 'page' => null]) }}"
-                   class="btn btn-ghost">
-                    Clear
-                </a>
-            @endif
         </form>
 
         <p data-rdap-selection-message class="mt-2 text-xs muted"></p>

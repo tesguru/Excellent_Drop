@@ -9,13 +9,13 @@
             <div class="md:col-span-2">
                 <label for="q" class="label">Name</label>
                 <input id="q" name="q" type="search" value="{{ $data['query'] }}" placeholder="e.g. acmeplumbing"
-                       autocomplete="off" class="field mt-2">
+                       autocomplete="off" data-auto-submit class="field mt-2">
                 <p class="mt-1 text-[11px] muted">Contains needs at least {{ \App\Services\Zone\ZoneSearch::CONTAINS_MIN_LENGTH }} characters.</p>
             </div>
 
             <div>
                 <label for="mode" class="label">Mode</label>
-                <select id="mode" name="mode" class="field mt-2 cursor-pointer">
+                <select id="mode" name="mode" data-auto-submit class="field mt-2 cursor-pointer">
                     @foreach (['contains' => 'Contains', 'starts' => 'Starts with', 'ends' => 'Ends with', 'exact' => 'Exact'] as $value => $label)
                         <option value="{{ $value }}" @selected($data['mode'] === $value)>{{ $label }}</option>
                     @endforeach
@@ -24,7 +24,7 @@
 
             <div>
                 <label for="tld" class="label">TLD</label>
-                <select id="tld" name="tld[]" multiple size="4" class="field mt-2 h-auto cursor-pointer">
+                <select id="tld" name="tld[]" multiple size="4" data-auto-submit class="field mt-2 h-auto cursor-pointer">
                     @foreach ($tldOptions as $tld)
                         <option value="{{ $tld }}" @selected(in_array($tld, $data['tlds'], true))>{{ $tld }}</option>
                     @endforeach
@@ -34,22 +34,22 @@
 
             <div>
                 <label for="min_length" class="label">Min length</label>
-                <input id="min_length" name="min_length" type="number" min="1" max="63"
+                <input id="min_length" name="min_length" type="number" min="1" max="63" data-auto-submit
                        value="{{ $data['min_length'] }}" class="field mt-2">
             </div>
 
             <div>
                 <label for="max_length" class="label">Max length</label>
-                <input id="max_length" name="max_length" type="number" min="1" max="63"
+                <input id="max_length" name="max_length" type="number" min="1" max="63" data-auto-submit
                        value="{{ $data['max_length'] }}" class="field mt-2">
             </div>
 
             <div class="flex items-end gap-4 pb-2">
                 <label class="flex items-center gap-2 text-sm muted">
-                    <input type="checkbox" name="hide_digits" value="1" @checked($data['hide_digits'])> Hide digits
+                    <input type="checkbox" name="hide_digits" value="1" data-auto-submit @checked($data['hide_digits'])> Hide digits
                 </label>
                 <label class="flex items-center gap-2 text-sm muted">
-                    <input type="checkbox" name="hide_hyphens" value="1" @checked($data['hide_hyphens'])> Hide hyphens
+                    <input type="checkbox" name="hide_hyphens" value="1" data-auto-submit @checked($data['hide_hyphens'])> Hide hyphens
                 </label>
             </div>
 

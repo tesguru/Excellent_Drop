@@ -53,7 +53,7 @@
                      fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" d="M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5.5-1.5L21 21" />
                 </svg>
-                <input id="watchlist-q" name="q" type="search" value="{{ $query }}" autocomplete="off"
+                <input id="watchlist-q" name="q" type="search" value="{{ $query }}" autocomplete="off" data-auto-submit
                        aria-label="Search watchlist by domain or note"
                        placeholder="Search by domain or note..." class="field pl-9">
             </div>

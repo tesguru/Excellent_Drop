@@ -15,6 +15,10 @@ class SearchController extends Controller
     {
         $data = $this->payload($request);
 
+        if ($request->ajax()) {
+            return view('partials.zone-results', ['data' => $data]);
+        }
+
         return view('search', [
             'data' => $data,
             'tldOptions' => $data['latest'] === null ? [] : $this->search->tlds($data['latest']),

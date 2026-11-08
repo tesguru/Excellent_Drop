@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\CandidateRepository;
+use Carbon\Exceptions\InvalidFormatException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -16,63 +17,66 @@ class DailyController extends Controller
 
     public function index(Request $request): View
     {
-        $date = $this->date($request);
-        $shortOnly = $request->boolean('short');
-        $endingsOnly = $request->boolean('endings');
-        $term = $this->term($request);
+        return $this->respond($request, 'daily', url('/daily'), now()->format('Y-m-d'));
+    }
 
-        return view('daily', [
-            'date' => $date,
-            'shortOnly' => $shortOnly,
-            'endingsOnly' => $endingsOnly,
-            'data' => $this->dataFor(
-                $date,
-                $shortOnly,
-                $endingsOnly,
-                $term,
-                $this->page($request),
-                $this->variation($request, 'min_variations'),
-                $this->variation($request, 'max_variations'),
-                $this->variation($request, 'exact_variations'),
-            ),
-            'dates' => $this->candidates->candidateDates(60),
-        ]);
+    public function overview(Request $request): View
+    {
+        return $this->respond($request, 'overview', url('/'), null);
     }
 
     public function data(Request $request): JsonResponse
     {
-        return response()->json($this->dataFor(
-            $this->date($request),
-            $request->boolean('short'),
-            $request->boolean('endings'),
-            $this->term($request),
-            $this->page($request),
-            $this->variation($request, 'min_variations'),
-            $this->variation($request, 'max_variations'),
-            $this->variation($request, 'exact_variations'),
-        ));
+        return response()->json($this->dataFor($request, $this->date($request, now()->format('Y-m-d'))));
+    }
+
+    public function overviewData(Request $request): JsonResponse
+    {
+        return response()->json($this->dataFor($request, $this->date($request, $this->latestDate())));
+    }
+
+    /**
+     * An AJAX request gets the list partial only, so the browser can swap one
+     * region instead of reloading the document.
+     */
+    private function respond(Request $request, string $view, string $action, ?string $defaultDate): View
+    {
+        $dates = $this->candidates->candidateDates(60);
+        $date = $this->date($request, $defaultDate ?? ($dates[0] ?? now()->format('Y-m-d')));
+        $data = $this->dataFor($request, $date);
+
+        return view($request->ajax() ? 'partials.daily-candidates' : $view, [
+            'action' => $action,
+            'date' => $date,
+            'dates' => $dates,
+            'shortOnly' => $data['short_only'],
+            'endingsOnly' => $data['endings_only'],
+            'query' => $data['query'],
+            'minVariations' => $data['min_variations'],
+            'maxVariations' => $data['max_variations'],
+            'exactVariations' => $data['exact_variations'],
+            'candidates' => $data['candidates'],
+            'pagination' => $data['pagination'],
+        ]);
     }
 
     /**
      * @return array<string, mixed>
      */
-    private function dataFor(
-        string $date,
-        bool $shortOnly,
-        bool $endingsOnly,
-        string $term,
-        int $page,
-        ?int $minVariations = null,
-        ?int $maxVariations = null,
-        ?int $exactVariations = null,
-    ): array {
-        $counts = $this->candidates->countsForDate($date);
+    private function dataFor(Request $request, string $date): array
+    {
+        $term = $this->term($request);
+        $shortOnly = $request->boolean('short');
+        $endingsOnly = $request->boolean('endings');
+        $minVariations = $this->variation($request, 'min_variations');
+        $maxVariations = $this->variation($request, 'max_variations');
+        $exactVariations = $this->variation($request, 'exact_variations');
 
         $result = $this->candidates->pageForDate(
             $date,
             $term,
             self::PER_PAGE,
-            $page,
+            $this->page($request),
             $shortOnly,
             $endingsOnly,
             $minVariations,
@@ -88,11 +92,6 @@ class DailyController extends Controller
             'min_variations' => $minVariations,
             'max_variations' => $maxVariations,
             'exact_variations' => $exactVariations,
-            'counts' => [
-                'removed' => $counts['removed'] ?? 0,
-                'added' => $counts['added'] ?? 0,
-                'candidates' => $counts['candidates'] ?? 0,
-            ],
             'pagination' => [
                 'page' => $result['page'],
                 'per_page' => $result['per_page'],
@@ -100,10 +99,13 @@ class DailyController extends Controller
                 'pages' => $result['pages'],
                 'has_more' => $result['page'] < $result['pages'],
             ],
-            'removed_names' => $this->candidates->removedNames($date),
-            'added_names' => $this->candidates->addedNames($date),
             'candidates' => $result['candidates'],
         ];
+    }
+
+    private function latestDate(): string
+    {
+        return $this->candidates->candidateDates(1)[0] ?? now()->format('Y-m-d');
     }
 
     private function term(Request $request): string
@@ -133,12 +135,18 @@ class DailyController extends Controller
         return $number === false ? null : max(0, $number);
     }
 
-    private function date(Request $request): string
+    private function date(Request $request, string $default): string
     {
-        $date = (string) $request->query('date', now()->format('Y-m-d'));
+        $value = $request->query('date');
 
-        $parsed = Carbon::parse($date);
+        if (! is_string($value) || trim($value) === '') {
+            return $default;
+        }
 
-        return $parsed->format('Y-m-d');
+        try {
+            return Carbon::parse($value)->format('Y-m-d');
+        } catch (InvalidFormatException) {
+            return $default;
+        }
     }
 }

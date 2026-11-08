@@ -51,8 +51,6 @@ class DashboardPagesTest extends TestCase
                     'watchlisted' => false,
                 ],
             ],
-            removed: ['anothername'],
-            added: ['newname'],
         ));
 
         $this->app->instance(ZoneSearch::class, new FakeZoneSearch(payload: [
@@ -98,9 +96,55 @@ class DashboardPagesTest extends TestCase
             ->assertSee('https://rdap.org/domain/acme-plumbing.net', false);
     }
 
-    public function test_the_daily_list_shows_the_removed_names(): void
+    public function test_the_daily_list_shows_the_candidates(): void
     {
         $this->get('/daily')->assertOk()->assertSee('acmeplumbing');
+    }
+
+    public function test_the_dashboard_shows_only_candidates(): void
+    {
+        $this->get('/')
+            ->assertOk()
+            ->assertSee('data-overview-list', false)
+            ->assertSee('Candidates')
+            ->assertDontSee('Names removed')
+            ->assertDontSee('Names added')
+            ->assertDontSee('Pipeline')
+            ->assertDontSee('Zone access')
+            ->assertDontSee('/api/overview');
+    }
+
+    public function test_the_lists_answer_ajax_with_their_partial_only(): void
+    {
+        foreach (['/', '/daily', '/watchlist', '/search?q=acmeplumbing'] as $url) {
+            $this->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+                ->get($url)
+                ->assertOk()
+                ->assertDontSee('<html', false)
+                ->assertDontSee('id="sidebar"', false);
+        }
+
+        $this->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+            ->get('/daily?q=oak')
+            ->assertOk()
+            ->assertSee('oak.com')
+            ->assertDontSee('acmeplumbing.com');
+    }
+
+    public function test_the_candidate_list_links_the_days_with_candidates(): void
+    {
+        $this->get('/daily')
+            ->assertOk()
+            ->assertSee('Days with candidates')
+            ->assertSee('name="date" type="date"', false)
+            ->assertSee('data-auto-submit', false)
+            ->assertSee('date='.now()->format('Y-m-d'), false);
+    }
+
+    public function test_an_empty_date_falls_back_instead_of_erroring(): void
+    {
+        $this->get('/daily?date=')->assertOk()->assertSee('acmeplumbing.com');
+        $this->get('/daily?date=not-a-date')->assertOk()->assertSee('acmeplumbing.com');
     }
 
     public function test_the_daily_candidates_open_in_a_modal_with_their_variations(): void
@@ -352,12 +396,14 @@ class DashboardPagesTest extends TestCase
     public function test_the_json_endpoints_answer(): void
     {
         $this->getJson('/api/overview')->assertOk()->assertJsonStructure([
-            'counts' => ['removed', 'added', 'candidates'],
-            'worker' => ['alive'],
-            'top_candidates',
+            'date',
+            'short_only',
+            'endings_only',
+            'pagination' => ['page', 'total', 'pages'],
+            'candidates',
         ]);
 
-        $this->getJson('/api/daily')->assertOk()->assertJsonStructure(['counts', 'removed_names', 'candidates']);
+        $this->getJson('/api/daily')->assertOk()->assertJsonStructure(['date', 'pagination', 'candidates']);
         $this->getJson('/api/search?q=acmeplumbing')->assertOk()->assertJsonStructure(['query', 'results']);
         $this->getJson('/api/jobs')->assertOk()->assertJsonStructure(['runs']);
         $this->getJson('/api/zones')->assertOk()->assertJsonStructure(['zones']);

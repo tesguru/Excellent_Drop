@@ -102,13 +102,23 @@
                 @endif
             </div>
 
+            @php
+                // Read from the heartbeat the worker already writes. Polling
+                // /api/overview for this dot rebuilt the whole dashboard every
+                // minute on every open page.
+                $heartbeat = \Illuminate\Support\Facades\Cache::get((string) config('zones.heartbeat_cache_key'));
+                $workerAlive = is_string($heartbeat) && $heartbeat !== ''
+                    && now()->diffInSeconds(\Illuminate\Support\Carbon::parse($heartbeat)) <= (int) config('zones.heartbeat_stale_seconds', 180);
+            @endphp
+
             <div id="worker-status" class="hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium sm:flex"
                  style="border-color: var(--border); background: var(--surface)">
-                <span data-worker-dot class="relative flex h-2 w-2">
-                    <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-sky-400 opacity-60"></span>
-                    <span class="relative inline-flex h-2 w-2 rounded-full bg-sky-400"></span>
+                <span class="relative flex h-2 w-2">
+                    <span class="relative inline-flex h-2 w-2 rounded-full {{ $workerAlive ? 'bg-emerald-400' : 'bg-rose-500' }}"></span>
                 </span>
-                <span data-worker-label class="muted">Worker</span>
+                <span class="{{ $workerAlive ? 'muted' : '' }}" @if (! $workerAlive) style="color: rgb(251 113 133)" @endif>
+                    {{ $workerAlive ? 'Worker online' : 'Worker offline' }}
+                </span>
             </div>
 
             <button id="theme-toggle" type="button" class="btn btn-ghost p-2" title="Toggle theme">

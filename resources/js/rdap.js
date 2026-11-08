@@ -819,7 +819,7 @@ async function checkSelected(button) {
     syncSelection();
 }
 
-export function initRdap() {
+export function refreshRdap() {
     if (typeof document === 'undefined') {
         return;
     }
@@ -832,6 +832,16 @@ export function initRdap() {
             updateDomainBadges(scope.dataset.domain, cached, true);
         }
     });
+
+    syncSelection();
+}
+
+export function initRdap() {
+    if (typeof document === 'undefined') {
+        return;
+    }
+
+    refreshRdap();
 
     document.addEventListener('change', function (event) {
         const box = event.target.closest('[data-rdap-select]');
@@ -882,6 +892,4 @@ export function initRdap() {
 
         performCheck(scope, { force: scope.dataset.rdapHasResult === '1' });
     });
-
-    syncSelection();
 }

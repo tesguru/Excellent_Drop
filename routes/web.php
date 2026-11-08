@@ -4,7 +4,6 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DailyController;
 use App\Http\Controllers\DomainStatusController;
 use App\Http\Controllers\JobsController;
-use App\Http\Controllers\OverviewController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\WatchlistController;
 use App\Http\Controllers\ZonesController;
@@ -20,7 +19,7 @@ Route::middleware('guest')->group(function (): void {
 Route::post('/logout', [LoginController::class, 'logout'])->middleware('auth')->name('logout');
 
 Route::middleware('auth')->group(function (): void {
-    Route::get('/', [OverviewController::class, 'index'])->name('overview');
+    Route::get('/', [DailyController::class, 'overview'])->name('overview');
 
     Route::get('/jobs', [JobsController::class, 'index'])->name('jobs');
     Route::get('/jobs/{runId}', [JobsController::class, 'show'])->name('jobs.show');
@@ -38,9 +37,9 @@ Route::middleware('auth')->group(function (): void {
 
     Route::get('/zones', [ZonesController::class, 'index'])->name('zones');
 
-    // JSON endpoints used by the dashboard.
+    // The same lists as JSON, for callers that do not want the HTML partial.
     Route::prefix('api')->name('api.')->group(function (): void {
-        Route::get('/overview', [OverviewController::class, 'data'])->name('overview');
+        Route::get('/overview', [DailyController::class, 'overviewData'])->name('overview');
         Route::get('/jobs', [JobsController::class, 'data'])->name('jobs');
         Route::get('/jobs/{runId}', [JobsController::class, 'showData'])->name('jobs.show');
         Route::get('/daily', [DailyController::class, 'data'])->name('daily');

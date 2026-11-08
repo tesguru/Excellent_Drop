@@ -23,10 +23,12 @@
 
     <p id="watchlist-message" class="hidden text-sm"></p>
 
-    @include('partials.watchlist-entries', [
-        'entries' => $entries,
-        'statuses' => $statuses,
-        'query' => $query ?? '',
-        'pagination' => $pagination ?? null,
-    ])
+    <div data-watchlist-list>
+        @include('partials.watchlist-entries', [
+            'entries' => $entries,
+            'statuses' => $statuses,
+            'query' => $query ?? '',
+            'pagination' => $pagination ?? null,
+        ])
+    </div>
 @endsection

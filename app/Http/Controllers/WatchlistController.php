@@ -22,7 +22,7 @@ class WatchlistController extends Controller
         $term = $this->term($request);
         $result = $this->entries($term, $this->page($request));
 
-        return view('watchlist', [
+        return view($request->ajax() ? 'partials.watchlist-entries' : 'watchlist', [
             'entries' => $result['entries'],
             'statuses' => self::STATUSES,
             'query' => $term,
