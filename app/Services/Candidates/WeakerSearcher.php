@@ -6,16 +6,15 @@ use App\Services\ClickHouse\ClickHouseClient;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Finds the weaker versions of dropped names.
+ * Finds the weaker versions of removed .com names.
  *
  * A weaker version is a registered domain built around the same name on
  * another TLD, with a hyphen inserted, that starts with, ends with or is a
  * plural of the name.
  *
  * Queries are batched: one query per rule for a whole chunk of removed names,
- * never one query per name. The search targets the weaker_corpus view, which
- * combines the latest zone snapshot with the currently pending/redemption
- * names. Every TLD is searched except the TLD of the dropped domain itself.
+ * never one query per name. Every snapshot is searched, including .com; only
+ * the dropped domain itself is excluded.
  *
  * Misspellings and contains-in-the-middle are phase 2: the hooks exist but
  * stay disabled by default.
@@ -52,13 +51,17 @@ class WeakerSearcher
     /** The safety cap for one name; the per-rule limits normally keep us far below it. */
     private const MAX_DETAILS_PER_NAME = 500;
 
+    /** Batched SQL can be a few megabytes, above ClickHouse's 256 KiB default. */
+    private const QUERY_SETTINGS = ['max_query_size' => 67108864];
+
+    /** Suffix queries must use the projection or not run at all. */
+    private const SUFFIX_SETTINGS = [
+        'max_query_size' => 67108864,
+        'force_optimize_projection' => 1,
+    ];
+
     /** Safety cap for one batched prefix/suffix lookup. */
     private const MAX_RANGE_ROWS = 200000;
-
-    /** The search queries run on the same instance as the web reads, and a
-     *  shared ClickHouse kill takes the whole run down with it, so each one
-     *  gets a memory ceiling of its own and spills its sort to disk first. */
-    private const DEFAULT_MAX_MEMORY_MB = 384;
 
     /** False once the name_rev_order projection is known to be missing. */
     private ?bool $endsWithAvailable = null;
@@ -77,7 +80,6 @@ class WeakerSearcher
      *
      * @param  array<int, string>  $names
      * @param  array<int, string>  $tlds  TLDs that have a snapshot for the given date
-     * @param  string  $excludeTld  The dropped domain's own TLD; never weaker
      * @return array<string, array{
      *     weaker_found: array<int, string>,
      *     weaker_types: array<int, string>,
@@ -87,7 +89,7 @@ class WeakerSearcher
      *     same_nameservers: bool
      * }>
      */
-    public function findMany(array $names, string $snapshotDate, array $tlds, string $excludeTld = 'com'): array
+    public function findMany(array $names, string $snapshotDate, array $tlds): array
     {
         $names = array_values(array_unique(array_filter(
             array_map(fn ($name) => strtolower(trim((string) $name)), $names),
@@ -109,7 +111,7 @@ class WeakerSearcher
         // 1. The same name on another TLD.
         $this->collect(
             $details,
-            $this->queryExact($names, $snapshotDate, $tlds, $excludeTld),
+            $this->queryExact($names, $snapshotDate, $tlds),
             self::SIGNAL_OTHER_TLD,
             fn (string $base, string $label): int => 0,
             $limit,
@@ -204,7 +206,7 @@ class WeakerSearcher
             );
         }
 
-        return $this->assemble($names, $details, $this->exactTldStats($names, $snapshotDate, $excludeTld));
+        return $this->assemble($names, $details, $this->exactTldStats($names, $snapshotDate));
     }
 
     /**
@@ -220,11 +222,11 @@ class WeakerSearcher
      *     same_nameservers: bool
      * }
      */
-    public function find(string $name, string $snapshotDate, array $tlds, string $excludeTld = 'com'): array
+    public function find(string $name, string $snapshotDate, array $tlds): array
     {
         $name = strtolower(trim($name));
 
-        return $this->findMany([$name], $snapshotDate, $tlds, $excludeTld)[$name] ?? $this->emptyResult();
+        return $this->findMany([$name], $snapshotDate, $tlds)[$name] ?? $this->emptyResult();
     }
 
     /**
@@ -654,23 +656,22 @@ class WeakerSearcher
      * @param  array<int, string>  $names
      * @return array<string, array{count:int, same_nameservers:bool}>
      */
-    private function exactTldStats(array $names, string $snapshotDate, string $excludeTld): array
+    private function exactTldStats(array $names, string $snapshotDate): array
     {
         $sql = sprintf(
             'SELECT name AS base, uniqExact(tld) AS exact_tld_count, '
             ."countIf(ns != '') AS known_ns, uniqExactIf(ns, ns != '') AS ns_sets "
-            .'FROM %s.weaker_corpus '
-            .'WHERE snapshot_date = %s AND tld != %s AND name IN %s '
+            .'FROM %s.zone_names '
+            .'WHERE snapshot_date = %s AND tld != \'com\' AND name IN %s '
             .'GROUP BY name',
             $this->database,
             $this->sqlString($snapshotDate),
-            $this->sqlString($excludeTld),
             $this->sqlArray($names),
         );
 
         $stats = [];
 
-        foreach ($this->clickhouse->rowsFromSql($sql, $this->querySettings()) as $row) {
+        foreach ($this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS) as $row) {
             $base = strtolower((string) ($row['base'] ?? ''));
 
             if ($base === '') {
@@ -690,26 +691,26 @@ class WeakerSearcher
     }
 
     /**
-     * The same name on another TLD. The dropped domain's own TLD never counts.
+     * The same name on another TLD. The .com row is the dropped domain
+     * itself and never counts.
      *
      * @param  array<int, string>  $names
      * @param  array<int, string>  $tlds
      * @return array<int, array<string, mixed>>
      */
-    private function queryExact(array $names, string $snapshotDate, array $tlds, string $excludeTld): array
+    private function queryExact(array $names, string $snapshotDate, array $tlds): array
     {
         $sql = sprintf(
-            'SELECT name AS base, tld, name, ns FROM %s.weaker_corpus '
-            .'WHERE snapshot_date = %s AND tld IN %s AND tld != %s AND name IN %s '
+            'SELECT name AS base, tld, name, ns FROM %s.zone_names '
+            .'WHERE snapshot_date = %s AND tld IN %s AND tld != \'com\' AND name IN %s '
             .'ORDER BY name, tld',
             $this->database,
             $this->sqlString($snapshotDate),
             $this->sqlArray($tlds),
-            $this->sqlString($excludeTld),
             $this->sqlArray($names),
         );
 
-        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
+        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
     }
 
     /**
@@ -727,7 +728,7 @@ class WeakerSearcher
         }
 
         $sql = sprintf(
-            'SELECT name, tld, ns FROM %s.weaker_corpus '
+            'SELECT name, tld, ns FROM %s.zone_names '
             .'WHERE snapshot_date = %s AND tld IN %s AND name IN %s '
             .'ORDER BY name, tld',
             $this->database,
@@ -736,7 +737,7 @@ class WeakerSearcher
             $this->sqlArray($names),
         );
 
-        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
+        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
     }
 
     /**
@@ -769,7 +770,7 @@ class WeakerSearcher
         }
 
         $sql = sprintf(
-            'SELECT name, tld, ns FROM %s.weaker_corpus '
+            'SELECT name, tld, ns FROM %s.zone_names '
             .'WHERE snapshot_date = %s AND tld IN %s AND (%s) '
             .'ORDER BY name, tld LIMIT %d',
             $this->database,
@@ -779,7 +780,7 @@ class WeakerSearcher
             self::MAX_RANGE_ROWS,
         );
 
-        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
+        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
     }
 
     /**
@@ -812,7 +813,7 @@ class WeakerSearcher
         }
 
         $sql = sprintf(
-            'SELECT name, tld, ns FROM %s.weaker_corpus '
+            'SELECT name, tld, ns FROM %s.zone_names '
             .'WHERE snapshot_date = %s AND tld IN %s AND (%s) '
             .'ORDER BY name, tld LIMIT %d',
             $this->database,
@@ -822,7 +823,7 @@ class WeakerSearcher
             self::MAX_RANGE_ROWS,
         );
 
-        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
+        return $this->clickhouse->rowsFromSql($sql, self::SUFFIX_SETTINGS);
     }
 
     /**
@@ -835,7 +836,7 @@ class WeakerSearcher
         $sql = sprintf(
             'SELECT base, tld, name, ns FROM ('
             .'SELECT r.name AS base, z.tld AS tld, z.name AS name, z.ns AS ns '
-            .'FROM %s.weaker_corpus AS z '
+            .'FROM %s.zone_names AS z '
             .'INNER JOIN (SELECT arrayJoin(%s) AS name) AS r '
             .'ON positionCaseInsensitive(z.name, r.name) > 0 AND z.name != r.name '
             .'WHERE z.snapshot_date = %s AND z.tld IN %s'
@@ -847,28 +848,7 @@ class WeakerSearcher
             $limit,
         );
 
-        return $this->clickhouse->rowsFromSql($sql, $this->querySettings());
-    }
-
-    /**
-     * Settings for every batched corpus query. Batched SQL can be a few
-     * megabytes, above ClickHouse's 256 KiB default, and the sort of a
-     * prefix range is allowed to spill to disk instead of eating the memory
-     * the rest of the server needs.
-     *
-     * @return array<string, int>
-     */
-    private function querySettings(): array
-    {
-        $bytes = max(64, (int) ($this->config['max_memory_mb'] ?? self::DEFAULT_MAX_MEMORY_MB)) * 1048576;
-        $spill = intdiv($bytes, 2);
-
-        return [
-            'max_query_size' => 67108864,
-            'max_memory_usage' => $bytes,
-            'max_bytes_before_external_group_by' => $spill,
-            'max_bytes_before_external_sort' => $spill,
-        ];
+        return $this->clickhouse->rowsFromSql($sql, self::QUERY_SETTINGS);
     }
 
     /**

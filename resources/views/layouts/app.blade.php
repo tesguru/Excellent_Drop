@@ -35,10 +35,9 @@
             @php
                 $nav = [
                     ['route' => 'overview', 'label' => 'Overview', 'path' => '/', 'icon' => 'M4 13h6V4H4v9Zm10 7h6v-9h-6v9ZM4 20h6v-4H4v4Zm10-11h6V4h-6v5Z'],
-                    ['route' => 'daily.pending', 'label' => 'Pending Daily List', 'path' => '/daily/pending', 'icon' => 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 4v5l3 2'],
-                    ['route' => 'daily.drop', 'label' => 'Drop Daily List', 'path' => '/daily', 'icon' => 'M7 3v3m10-3v3M4 9h16M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm3 7h3v3H8v-3Z'],
-                    ['route' => 'watchlist', 'label' => 'Watchlist', 'path' => '/watchlist', 'icon' => 'M12 4.5c-4 0-7 3-8.5 7.5C5 16.5 8 19.5 12 19.5s7-3 8.5-7.5C19 7.5 16 4.5 12 4.5Zm0 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'],
+                    ['route' => 'daily', 'label' => 'Daily list', 'path' => '/daily', 'icon' => 'M7 3v3m10-3v3M4 9h16M5 6h14a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1Zm3 7h3v3H8v-3Z'],
                     ['route' => 'search', 'label' => 'Search', 'path' => '/search', 'icon' => 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14Zm5.5-1.5L21 21'],
+                    ['route' => 'watchlist', 'label' => 'Watchlist', 'path' => '/watchlist', 'icon' => 'M12 4.5c-4 0-7 3-8.5 7.5C5 16.5 8 19.5 12 19.5s7-3 8.5-7.5C19 7.5 16 4.5 12 4.5Zm0 10.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'],
                     ['route' => 'jobs', 'label' => 'Jobs', 'path' => '/jobs', 'icon' => 'M4 6h16M4 12h10M4 18h13'],
                     ['route' => 'zones', 'label' => 'Zones', 'path' => '/zones', 'icon' => 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Zm0 0c2.5 2.4 4 5.6 4 9s-1.5 6.6-4 9m0-18c-2.5 2.4-4 5.6-4 9s1.5 6.6 4 9M3.5 9h17M3.5 15h17'],
                 ];

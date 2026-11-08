@@ -37,7 +37,7 @@
     <div class="border-b px-4 py-3" style="border-color: var(--border)">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="flex flex-wrap items-center gap-2">
-                <h2 class="display text-sm font-bold">Drop Daily List</h2>
+                <h2 class="display text-sm font-bold">Candidates</h2>
                 <span class="chip muted" style="background: var(--surface-2)">{{ number_format($total) }}</span>
 
                 @if ($query !== '')
@@ -180,7 +180,7 @@
                             </svg>
                         </span>
                         <span class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] muted">
-                            <span>Dropped {{ $candidate['event_date'] }}</span>
+                            <span>Removed {{ $candidate['event_date'] }}</span>
                             @if (! empty($candidate['estimated_drop_date']))
                                 <span>&middot;</span>
                                 <span>estimated drop {{ $candidate['estimated_drop_date'] }}</span>
@@ -301,12 +301,12 @@
             <div class="max-h-[calc(100dvh-9rem)] space-y-5 overflow-y-auto overscroll-contain px-5 py-4">
                 <div class="grid gap-3 sm:grid-cols-3">
                     <div class="rounded-xl border p-3" style="border-color: var(--border); background: var(--surface-2)">
-                        <p class="label">Dropped</p>
+                        <p class="label">Removed</p>
                         <p class="mt-1 font-mono text-sm font-semibold">{{ $candidate['event_date'] }}</p>
                     </div>
 
                     <div class="rounded-xl border p-3" style="border-color: var(--border); background: var(--surface-2)">
-                        <p class="label">Drop date</p>
+                        <p class="label">Estimated drop</p>
                         <p class="mt-1 font-mono text-sm font-semibold">{{ $candidate['estimated_drop_date'] ?? '—' }}</p>
                     </div>
 

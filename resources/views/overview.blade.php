@@ -4,12 +4,13 @@
 @section('subtitle', 'Today at a glance')
 
 @section('content')
-    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+    <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         @php
             $tiles = [
-                ['label' => 'Dropped today', 'value' => $data['counts']['dropped'], 'hint' => 'across all supported TLDs'],
-                ['label' => 'Pending delete', 'value' => $data['counts']['pending'], 'hint' => 'registered but heading for deletion'],
-                ['label' => 'Candidates', 'value' => $data['counts']['candidates'], 'hint' => 'dropped names with weaker versions'],
+                ['label' => 'Names removed', 'value' => $data['counts']['removed'], 'hint' => 'left the .com zone today'],
+                ['label' => 'Names added', 'value' => $data['counts']['added'], 'hint' => 'registered in the .com zone today'],
+                ['label' => 'Candidates', 'value' => $data['counts']['candidates'], 'hint' => 'with weaker versions'],
+                ['label' => 'Candidates (7d)', 'value' => $data['counts']['week_candidates'], 'hint' => $data['counts']['week_removed'].' names removed'],
             ];
         @endphp
 

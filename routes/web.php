@@ -25,8 +25,7 @@ Route::middleware('auth')->group(function (): void {
     Route::get('/jobs', [JobsController::class, 'index'])->name('jobs');
     Route::get('/jobs/{runId}', [JobsController::class, 'show'])->name('jobs.show');
 
-    Route::get('/daily', [DailyController::class, 'index'])->name('daily.drop');
-    Route::get('/daily/pending', [DailyController::class, 'index'])->name('daily.pending');
+    Route::get('/daily', [DailyController::class, 'index'])->name('daily');
     Route::get('/search', [SearchController::class, 'index'])->name('search');
 
     Route::get('/watchlist', [WatchlistController::class, 'index'])->name('watchlist');
@@ -44,8 +43,7 @@ Route::middleware('auth')->group(function (): void {
         Route::get('/overview', [OverviewController::class, 'data'])->name('overview');
         Route::get('/jobs', [JobsController::class, 'data'])->name('jobs');
         Route::get('/jobs/{runId}', [JobsController::class, 'showData'])->name('jobs.show');
-        Route::get('/daily', [DailyController::class, 'data'])->name('daily.drop');
-        Route::get('/daily/pending', [DailyController::class, 'data'])->name('daily.pending');
+        Route::get('/daily', [DailyController::class, 'data'])->name('daily');
         Route::get('/search', [SearchController::class, 'data'])->name('search');
         Route::get('/watchlist', [WatchlistController::class, 'data'])->name('watchlist');
         Route::get('/zones', [ZonesController::class, 'data'])->name('zones');

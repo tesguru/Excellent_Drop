@@ -53,23 +53,6 @@ class DashboardPagesTest extends TestCase
             ],
             removed: ['anothername'],
             added: ['newname'],
-            pendingCandidates: [
-                [
-                    'event_date' => now()->format('Y-m-d'),
-                    'name' => 'pendingpick',
-                    'domain' => 'pendingpick.com',
-                    'status' => 'pending_delete',
-                    'weaker_found' => ['pending-pick.net'],
-                    'weaker_types' => ['hyphen'],
-                    'weaker_count' => 1,
-                    'tld_count' => 1,
-                    'exact_tld_count' => 2,
-                    'is_short' => false,
-                    'score' => 84.0,
-                    'estimated_drop_date' => now()->addDays(5)->format('Y-m-d'),
-                    'watchlisted' => false,
-                ],
-            ],
         ));
 
         $this->app->instance(ZoneSearch::class, new FakeZoneSearch(payload: [
@@ -118,34 +101,6 @@ class DashboardPagesTest extends TestCase
     public function test_the_daily_list_shows_the_removed_names(): void
     {
         $this->get('/daily')->assertOk()->assertSee('acmeplumbing');
-    }
-
-    public function test_the_sidebar_switches_between_the_pending_and_drop_daily_lists(): void
-    {
-        $this->get('/daily')
-            ->assertOk()
-            ->assertSee('Pending Daily List')
-            ->assertSee('Drop Daily List')
-            ->assertSee('acmeplumbing.com');
-
-        $this->get('/daily/pending')
-            ->assertOk()
-            ->assertSee('Pending Daily List')
-            ->assertSee('pendingpick.com')
-            ->assertDontSee('acmeplumbing.com');
-
-        $this->getJson('/api/daily/pending')
-            ->assertOk()
-            ->assertJsonPath('list', 'pending')
-            ->assertJsonPath('candidates.0.domain', 'pendingpick.com')
-            ->assertJsonPath('counts.pending_candidates', 1)
-            ->assertJsonPath('pagination.total', 1);
-
-        // The page is chosen by the route, not by the query.
-        $this->get('/daily?list=pending')
-            ->assertOk()
-            ->assertSee('acmeplumbing.com')
-            ->assertDontSee('pendingpick.com');
     }
 
     public function test_the_daily_candidates_open_in_a_modal_with_their_variations(): void

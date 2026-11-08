@@ -121,7 +121,7 @@ class DomainStatusTest extends TestCase
 
         $repository->pageForDate('2026-10-24');
 
-        $this->assertStringContainsString("c.tld = 'com' AND c.name IN {hidden:Array(String)}", $client->calls[0]['sql']);
+        $this->assertStringContainsString('c.name NOT IN {hidden:Array(String)}', $client->calls[0]['sql']);
         $this->assertEqualsCanonicalizing(['acme', 'oak'], $client->calls[0]['params']['hidden']);
     }
 }

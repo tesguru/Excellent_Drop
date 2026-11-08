@@ -39,6 +39,8 @@ class OverviewController extends Controller
         $today = now()->format('Y-m-d');
         $counts = $this->candidates->countsForDate($today);
 
+        $week = $this->weekCounts();
+
         $heartbeat = Cache::get((string) config('zones.heartbeat_cache_key'));
         $staleAfter = (int) config('zones.heartbeat_stale_seconds', 180);
 
@@ -81,8 +83,8 @@ class OverviewController extends Controller
                 'removed' => $counts['removed'] ?? 0,
                 'added' => $counts['added'] ?? 0,
                 'candidates' => $counts['candidates'] ?? 0,
-                'dropped' => $counts['dropped'] ?? 0,
-                'pending' => $counts['pending'] ?? 0,
+                'week_candidates' => $week['candidates'] ?? 0,
+                'week_removed' => $week['removed'] ?? 0,
             ],
             'worker' => [
                 'alive' => $workerAlive,
@@ -103,6 +105,20 @@ class OverviewController extends Controller
             ],
             'top_candidates' => $this->candidates->forDate($today, 10, $shortOnly, $endingsOnly),
             'snapshot_dates' => $this->candidates->candidateDates(30),
+        ];
+    }
+
+    /**
+     * @return array{candidates:int, removed:int}
+     */
+    private function weekCounts(): array
+    {
+        $from = now()->subDays(6)->format('Y-m-d');
+        $to = now()->format('Y-m-d');
+
+        return [
+            'candidates' => count($this->candidates->forRange($from, $to, 5000)),
+            'removed' => $this->candidates->removedCount($from, $to),
         ];
     }
 }

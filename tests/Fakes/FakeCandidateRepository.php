@@ -15,13 +15,11 @@ class FakeCandidateRepository extends CandidateRepository
      * @param  array<int, array<string, mixed>>  $candidates
      * @param  array<int, string>  $removed
      * @param  array<int, string>  $added
-     * @param  array<int, array<string, mixed>>  $pendingCandidates
      */
     public function __construct(
         private readonly array $candidates = [],
         private readonly array $removed = [],
         private readonly array $added = [],
-        private readonly array $pendingCandidates = [],
     ) {
         parent::__construct(new ClickHouseClient(config('zones.clickhouse')), 'zones');
     }
@@ -171,44 +169,9 @@ class FakeCandidateRepository extends CandidateRepository
         return $this->added;
     }
 
-    public function pageOfPendingCandidates(string $term = '', int $perPage = 25, int $page = 1): array
+    public function removedCount(string $from, string $to): int
     {
-        $candidates = $this->pendingCandidates;
-
-        $terms = array_values(array_filter(preg_split('/\s+/', strtolower(trim($term))) ?: []));
-
-        foreach ($terms as $part) {
-            if (str_contains($part, '.')) {
-                $part = (string) preg_replace('/\.[^.]+$/', '', $part);
-            }
-
-            if ($part === '') {
-                continue;
-            }
-
-            $candidates = $this->filter(
-                $candidates,
-                fn (array $candidate) => str_contains(strtolower((string) ($candidate['name'] ?? '')), $part),
-            );
-        }
-
-        usort($candidates, function (array $a, array $b): int {
-            return ((float) ($b['score'] ?? 0) <=> (float) ($a['score'] ?? 0))
-                ?: strcmp((string) ($a['name'] ?? ''), (string) ($b['name'] ?? ''));
-        });
-
-        $total = count($candidates);
-        $perPage = max(1, $perPage);
-        $pages = max(1, (int) ceil($total / $perPage));
-        $page = min(max(1, $page), $pages);
-
-        return [
-            'candidates' => array_slice($candidates, ($page - 1) * $perPage, $perPage),
-            'total' => $total,
-            'page' => $page,
-            'per_page' => $perPage,
-            'pages' => $pages,
-        ];
+        return count($this->removed);
     }
 
     public function countsForDate(string $date): array
@@ -217,9 +180,6 @@ class FakeCandidateRepository extends CandidateRepository
             'removed' => count($this->removed),
             'added' => count($this->added),
             'candidates' => count($this->candidates),
-            'dropped' => count($this->removed),
-            'pending' => count($this->added),
-            'pending_candidates' => count($this->pendingCandidates),
         ];
     }
 

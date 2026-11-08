@@ -21,27 +21,8 @@ class CandidateRepository
      */
     private const SEARCH_LOOKBACK_DAYS = 45;
 
-    /** The columns every candidate read returns. */
-    private const CANDIDATE_COLUMNS = 'c.event_date, c.tld, c.name, c.status, '
-        .'toDate(c.drop_utc) AS drop_date, c.weaker_found, c.weaker_types, '
-        .'c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score';
-
-    /**
-     * Drop-candidate reads. Rows built before the PendingDelete status
-     * column existed have an empty status, so both spellings are drops.
-     */
-    private const DROP_STATUS = "c.status IN ('dropped', '')";
-
-    /** Pending reads take the drop date from the feed join instead. */
-    private const PENDING_CANDIDATE_COLUMNS = 'c.event_date, c.tld, c.name, c.status, '
-        .'toDate(p.drop_utc) AS drop_date, c.weaker_found, c.weaker_types, '
-        .'c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score';
-
     /** @var array<int, string>|null */
     private ?array $hiddenNames = null;
-
-    /** Whether the pending-delete dataset has replaced the zone diff counts. */
-    private ?bool $pendingDeleteReady = null;
 
     public function __construct(
         private readonly ClickHouseClient $clickhouse,
@@ -54,8 +35,8 @@ class CandidateRepository
     public function forDate(string $date, int $limit = 500, bool $shortOnly = false, bool $exactOnly = false): array
     {
         $sql = $this->visibleCandidatesSql(
-            'SELECT '.self::CANDIDATE_COLUMNS,
-            self::DROP_STATUS.' AND c.event_date = {d:Date}'
+            'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
+            'c.event_date = {d:Date}'
             .($shortOnly ? ' AND c.is_short = 1' : '')
             .($exactOnly ? ' AND c.exact_tld_count >= 2' : ''),
             'ORDER BY c.score DESC, c.name LIMIT {lim:UInt32}',
@@ -64,6 +45,7 @@ class CandidateRepository
         $rows = $this->clickhouse->rows($sql, [
             'd' => $date,
             'from' => $date,
+            'tld' => 'com',
             'event' => 'added',
             'hidden' => $this->hiddenNames(),
             'lim' => $limit,
@@ -94,11 +76,12 @@ class CandidateRepository
         $params = [
             'd' => $date,
             'from' => $date,
+            'tld' => 'com',
             'event' => 'added',
             'hidden' => $this->hiddenNames(),
         ];
 
-        $where = self::DROP_STATUS.' AND c.event_date = {d:Date}'
+        $where = 'c.event_date = {d:Date}'
             .($shortOnly ? ' AND c.is_short = 1' : '')
             .($exactOnly ? ' AND c.exact_tld_count >= 2' : '');
 
@@ -133,7 +116,7 @@ class CandidateRepository
 
         $rows = $this->clickhouse->rows(
             $this->visibleCandidatesSql(
-                'SELECT '.self::CANDIDATE_COLUMNS,
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
                 $where,
                 'ORDER BY c.score DESC, c.name LIMIT {lim:UInt32} OFFSET {off:UInt32}',
             ),
@@ -180,11 +163,11 @@ class CandidateRepository
     {
         $rows = $this->clickhouse->rows(
             $this->visibleCandidatesSql(
-                'SELECT '.self::CANDIDATE_COLUMNS,
-                self::DROP_STATUS.' AND c.event_date >= {from:Date} AND c.event_date <= {to:Date}',
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
+                'c.event_date >= {from:Date} AND c.event_date <= {to:Date}',
                 'ORDER BY c.event_date DESC, c.score DESC, c.name LIMIT {lim:UInt32}',
             ),
-            ['from' => $from, 'to' => $to, 'event' => 'added', 'hidden' => $this->hiddenNames(), 'lim' => $limit],
+            ['from' => $from, 'to' => $to, 'tld' => 'com', 'event' => 'added', 'hidden' => $this->hiddenNames(), 'lim' => $limit],
         );
 
         return $this->decorate($rows);
@@ -217,8 +200,8 @@ class CandidateRepository
 
         $rows = $this->clickhouse->rows(
             $this->visibleCandidatesSql(
-                'SELECT '.self::CANDIDATE_COLUMNS,
-                self::DROP_STATUS.' AND c.event_date >= {from:Date} '
+                'SELECT c.event_date, c.name, c.weaker_found, c.weaker_types, c.weaker_count, c.tld_count, c.exact_tld_count, c.is_short, c.score',
+                'c.event_date >= {from:Date} '
                 .'AND (c.name = {exact:String} OR positionCaseInsensitive(c.name, {partial:String}) > 0)',
                 'ORDER BY c.event_date DESC, c.score DESC, c.name LIMIT {lim:UInt32}',
             ),
@@ -226,6 +209,7 @@ class CandidateRepository
                 'from' => $from,
                 'exact' => $term,
                 'partial' => $term,
+                'tld' => 'com',
                 'event' => 'added',
                 'hidden' => $this->hiddenNames(),
                 'lim' => $limit,
@@ -236,29 +220,15 @@ class CandidateRepository
     }
 
     /**
-     * Full domains that dropped on a given day.
+     * Names that left the .com zone on a given day.
      *
-     * @return array<int, string>
+     * @return array<int, array<string, mixed>>
      */
     public function removedNames(string $date, int $limit = 2000): array
     {
-        if ($this->pendingDeleteReady()) {
-            $rows = $this->clickhouse->rows(
-                sprintf(
-                    'SELECT DISTINCT name, tld FROM %s.pendingdelete_names FINAL '
-                    ."WHERE status = {status:String} AND tld = 'com' AND toDate(drop_utc) = {d:Date} "
-                    .'ORDER BY name, tld LIMIT {lim:UInt32}',
-                    $this->database,
-                ),
-                ['status' => 'dropped', 'd' => $date, 'lim' => $limit],
-            );
-
-            return $this->domains($rows);
-        }
-
         $rows = $this->clickhouse->rows(
             sprintf(
-                'SELECT name FROM %s.zone_events '
+                'SELECT event_date, name FROM %s.zone_events '
                 .'WHERE tld = {tld:String} AND event = {event:String} AND event_date = {d:Date} '
                 .'ORDER BY name LIMIT {lim:UInt32}',
                 $this->database,
@@ -266,30 +236,22 @@ class CandidateRepository
             ['tld' => 'com', 'event' => 'removed', 'd' => $date, 'lim' => $limit],
         );
 
-        return $this->domains($rows, 'com');
+        $names = [];
+
+        foreach ($rows as $row) {
+            $names[] = (string) ($row['name'] ?? '');
+        }
+
+        return $names;
     }
 
     /**
-     * Full domains currently in redemption or pending delete.
+     * Names that appeared in the .com zone on a given day.
      *
      * @return array<int, string>
      */
     public function addedNames(string $date, int $limit = 2000): array
     {
-        if ($this->pendingDeleteReady()) {
-            $rows = $this->clickhouse->rows(
-                sprintf(
-                    'SELECT name, tld FROM %s.pendingdelete_names FINAL '
-                    ."WHERE status IN ('pending_delete', 'redemption') AND tld = 'com' "
-                    .'ORDER BY name, tld LIMIT {lim:UInt32}',
-                    $this->database,
-                ),
-                ['lim' => $limit],
-            );
-
-            return $this->domains($rows);
-        }
-
         $rows = $this->clickhouse->rows(
             sprintf(
                 'SELECT name FROM %s.zone_events '
@@ -300,55 +262,31 @@ class CandidateRepository
             ['tld' => 'com', 'event' => 'added', 'd' => $date, 'lim' => $limit],
         );
 
-        return $this->domains($rows, 'com');
+        $names = [];
+
+        foreach ($rows as $row) {
+            $names[] = (string) ($row['name'] ?? '');
+        }
+
+        return $names;
     }
 
     /**
-     * A page of scored candidates for names currently in redemption or
-     * pending delete. The feed join is the freshness check: once a name
-     * drops or is registered again it leaves the list.
-     *
-     * @return array{candidates: array<int, array<string, mixed>>, total: int, page: int, per_page: int, pages: int}
+     * How many names left the .com zone between two dates.
      */
-    public function pageOfPendingCandidates(string $term = '', int $perPage = 25, int $page = 1): array
+    public function removedCount(string $from, string $to): int
     {
-        $perPage = max(1, min(100, $perPage));
-        $page = max(1, $page);
-
-        $params = ['hidden' => $this->hiddenNames()];
-
-        $where = "c.status = 'pending_delete'";
-
-        foreach ($this->searchTerms($term) as $index => $part) {
-            $where .= ' AND positionCaseInsensitive(c.name, {term'.$index.':String}) > 0';
-            $params['term'.$index] = $part;
-        }
-
-        $totalRows = $this->clickhouse->rows(
-            $this->pendingCandidatesSql('SELECT count() AS total', $where, ''),
-            $params,
-        );
-
-        $total = (int) ($totalRows[0]['total'] ?? 0);
-        $pages = max(1, (int) ceil($total / $perPage));
-        $page = min($page, $pages);
-
         $rows = $this->clickhouse->rows(
-            $this->pendingCandidatesSql(
-                'SELECT '.self::PENDING_CANDIDATE_COLUMNS,
-                $where,
-                'ORDER BY c.score DESC, c.name LIMIT {lim:UInt32} OFFSET {off:UInt32}',
+            sprintf(
+                'SELECT count() AS total FROM %s.zone_events '
+                .'WHERE tld = {tld:String} AND event = {event:String} '
+                .'AND event_date >= {from:Date} AND event_date <= {to:Date}',
+                $this->database,
             ),
-            $params + ['lim' => $perPage, 'off' => ($page - 1) * $perPage],
+            ['tld' => 'com', 'event' => 'removed', 'from' => $from, 'to' => $to],
         );
 
-        return [
-            'candidates' => $this->decorate($rows),
-            'total' => $total,
-            'page' => $page,
-            'per_page' => $perPage,
-            'pages' => $pages,
-        ];
+        return (int) ($rows[0]['total'] ?? 0);
     }
 
     /**
@@ -356,105 +294,33 @@ class CandidateRepository
      */
     public function countsForDate(string $date): array
     {
-        $counts = [
-            'removed' => 0,
-            'added' => 0,
-            'candidates' => 0,
-            'dropped' => 0,
-            'pending' => 0,
-            'pending_candidates' => 0,
-        ];
+        $rows = $this->clickhouse->rows(
+            sprintf(
+                'SELECT event, count() AS total FROM %s.zone_events '
+                .'WHERE tld = {tld:String} AND event_date = {d:Date} GROUP BY event',
+                $this->database,
+            ),
+            ['tld' => 'com', 'd' => $date],
+        );
 
-        if ($this->pendingDeleteReady()) {
-            $rows = $this->clickhouse->rows(
-                sprintf(
-                    "SELECT countIf(status = 'dropped' AND tld = 'com' AND toDate(drop_utc) = {d:Date}) AS dropped, "
-                    ."countIf(status IN ('pending_delete', 'redemption') AND tld = 'com') AS pending "
-                    .'FROM %s.pendingdelete_names FINAL',
-                    $this->database,
-                ),
-                ['d' => $date],
-            );
+        $counts = ['removed' => 0, 'added' => 0, 'candidates' => 0];
 
-            $counts['dropped'] = (int) ($rows[0]['dropped'] ?? 0);
-            $counts['pending'] = (int) ($rows[0]['pending'] ?? 0);
-
-            // removed/added remain for existing callers; the daily dataset has
-            // no zone diff, so "added" now means still in the pending backlog.
-            $counts['removed'] = $counts['dropped'];
-            $counts['added'] = $counts['pending'];
-        } else {
-            $rows = $this->clickhouse->rows(
-                sprintf(
-                    'SELECT event, count() AS total FROM %s.zone_events '
-                    .'WHERE tld = {tld:String} AND event_date = {d:Date} GROUP BY event',
-                    $this->database,
-                ),
-                ['tld' => 'com', 'd' => $date],
-            );
-
-            foreach ($rows as $row) {
-                $counts[(string) ($row['event'] ?? '')] = (int) ($row['total'] ?? 0);
-            }
+        foreach ($rows as $row) {
+            $counts[(string) ($row['event'] ?? '')] = (int) ($row['total'] ?? 0);
         }
 
         $candidateRows = $this->clickhouse->rows(
             $this->visibleCandidatesSql(
                 'SELECT count() AS total',
-                self::DROP_STATUS.' AND c.event_date = {d:Date}',
+                'c.event_date = {d:Date}',
                 '',
             ),
-            ['d' => $date, 'from' => $date, 'event' => 'added', 'hidden' => $this->hiddenNames()],
+            ['d' => $date, 'from' => $date, 'tld' => 'com', 'event' => 'added', 'hidden' => $this->hiddenNames()],
         );
 
         $counts['candidates'] = (int) ($candidateRows[0]['total'] ?? 0);
 
-        $pendingRows = $this->clickhouse->rows(
-            $this->pendingCandidatesSql('SELECT count() AS total', "c.status = 'pending_delete'", ''),
-            ['hidden' => $this->hiddenNames()],
-        );
-
-        $counts['pending_candidates'] = (int) ($pendingRows[0]['total'] ?? 0);
-
         return $counts;
-    }
-
-    /**
-     * @param  array<int, array<string, mixed>>  $rows
-     * @return array<int, string>
-     */
-    private function domains(array $rows, string $defaultTld = ''): array
-    {
-        $domains = [];
-
-        foreach ($rows as $row) {
-            $name = (string) ($row['name'] ?? '');
-            $tld = (string) ($row['tld'] ?? $defaultTld);
-
-            if ($name !== '' && $tld !== '') {
-                $domains[] = $name.'.'.$tld;
-            }
-        }
-
-        return $domains;
-    }
-
-    /**
-     * Whether the pending-delete import has produced any rows. Until the first
-     * import the dashboard falls back to the zone diff history.
-     */
-    private function pendingDeleteReady(): bool
-    {
-        if ($this->pendingDeleteReady === null) {
-            $rows = $this->clickhouse->rows(sprintf(
-                'SELECT count() AS total FROM %s.pendingdelete_names',
-                $this->database,
-            ));
-
-            $this->pendingDeleteReady = ((int) ($rows[0]['total'] ?? 0)) > 0;
-        }
-
-        return $this->pendingDeleteReady;
     }
 
     /**
@@ -503,44 +369,22 @@ class CandidateRepository
     }
 
     /**
-     * Pending candidates joined to the names still pending in the feed. The
-     * join doubles as the freshness check, so a scored name disappears as
-     * soon as it drops or is registered again.
-     */
-    private function pendingCandidatesSql(string $select, string $where, string $tail): string
-    {
-        return $select
-            .' FROM '.$this->database.'.com_candidates AS c '
-            .'INNER JOIN ('
-            .'SELECT tld, name, max(drop_utc) AS drop_utc FROM '.$this->database.'.pendingdelete_names FINAL '
-            ."WHERE status IN ('pending_delete', 'redemption') AND tld = 'com' GROUP BY tld, name"
-            .') AS p ON p.tld = c.tld AND p.name = c.name '
-            .'WHERE '.$where
-            ." AND NOT (c.tld = 'com' AND c.name IN {hidden:Array(String)}) "
-            .$tail;
-    }
-
-    /**
-     * A candidate disappears once the same domain is seen again as registered:
-     * either in the current pending-delete dataset or in the historical zone
-     * diff. The join runs in ClickHouse so the limit applies to visible rows.
+     * A candidate disappears once the same .com name is added again, or when
+     * its saved RDAP status says it is on hold or already renewed. The join
+     * runs in ClickHouse so the limit still applies to visible rows.
      */
     private function visibleCandidatesSql(string $select, string $where, string $tail): string
     {
         return $select
             .' FROM '.$this->database.'.com_candidates AS c '
             .'LEFT JOIN ('
-            .'SELECT tld, name, max(seen_on) AS seen_on FROM ('
-            .'SELECT tld, name, toDate(observed_at) AS seen_on FROM '.$this->database.'.pendingdelete_names FINAL '
-            ."WHERE status != 'dropped' "
-            .'UNION ALL '
-            .'SELECT tld, name, max(event_date) AS seen_on FROM '.$this->database.'.zone_events '
-            .'WHERE event = {event:String} AND event_date >= {from:Date} GROUP BY tld, name'
-            .') GROUP BY tld, name'
-            .') AS restored ON restored.tld = c.tld AND restored.name = c.name '
+            .'SELECT name, max(event_date) AS added_on FROM '.$this->database.'.zone_events '
+            .'WHERE tld = {tld:String} AND event = {event:String} AND event_date >= {from:Date} '
+            .'GROUP BY name'
+            .') AS restored ON restored.name = c.name '
             .'WHERE '.$where
-            .' AND (restored.seen_on IS NULL OR restored.seen_on < c.event_date) '
-            ."AND NOT (c.tld = 'com' AND c.name IN {hidden:Array(String)}) "
+            .' AND (restored.added_on IS NULL OR restored.added_on < c.event_date) '
+            .'AND c.name NOT IN {hidden:Array(String)} '
             .$tail
             .' SETTINGS join_use_nulls = 1';
     }
@@ -571,7 +415,7 @@ class CandidateRepository
             return [];
         }
 
-        $domains = array_map(fn (array $row) => $this->domainOf($row), $rows);
+        $domains = array_map(fn (array $row) => ((string) ($row['name'] ?? '')).'.com', $rows);
 
         $watched = Watchlist::whereIn('domain', $domains)->pluck('domain')->flip();
 
@@ -579,34 +423,20 @@ class CandidateRepository
             + (int) config('zones.drop.pending_delete_days', 5);
 
         foreach ($rows as $index => $row) {
-            $domain = $this->domainOf($row);
+            $domain = ((string) ($row['name'] ?? '')).'.com';
             $eventDate = (string) ($row['event_date'] ?? '');
-            $dropDate = (string) ($row['drop_date'] ?? '');
 
             $rows[$index]['domain'] = $domain;
-            $rows[$index]['tld'] = (string) ($row['tld'] ?? '') ?: 'com';
-            $rows[$index]['status'] = (string) ($row['status'] ?? '');
             $rows[$index]['weaker_found'] = array_values((array) ($row['weaker_found'] ?? []));
             $rows[$index]['weaker_types'] = array_values((array) ($row['weaker_types'] ?? []));
             $rows[$index]['is_short'] = (bool) ($row['is_short'] ?? false);
             $rows[$index]['exact_tld_count'] = (int) ($row['exact_tld_count'] ?? 0);
-            $rows[$index]['estimated_drop_date'] = $dropDate !== ''
-                ? $dropDate
-                : ($eventDate === '' ? null : Carbon::parse($eventDate)->addDays($graceDays)->format('Y-m-d'));
+            $rows[$index]['estimated_drop_date'] = $eventDate === ''
+                ? null
+                : Carbon::parse($eventDate)->addDays($graceDays)->format('Y-m-d');
             $rows[$index]['watchlisted'] = $watched->has($domain);
         }
 
         return $rows;
-    }
-
-    /**
-     * @param  array<string, mixed>  $row
-     */
-    private function domainOf(array $row): string
-    {
-        $name = (string) ($row['name'] ?? '');
-        $tld = (string) ($row['tld'] ?? '') ?: 'com';
-
-        return $name === '' ? '' : $name.'.'.$tld;
     }
 }

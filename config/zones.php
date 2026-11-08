@@ -111,12 +111,6 @@ return [
         'max_per_rule' => (int) env('WEAKER_MAX_PER_RULE', 50),
         'phase2_enabled' => (bool) env('WEAKER_PHASE2_ENABLED', false),
         'chunk_size' => (int) env('WEAKER_CHUNK_SIZE', 500),
-
-        // Per-query memory ceiling for the corpus searches, in megabytes.
-        // Their sorts spill to disk above half of it, so a search can never
-        // push ClickHouse over the server-wide limit and take a page load
-        // down with it.
-        'max_memory_mb' => (int) env('WEAKER_MAX_MEMORY_MB', 384),
     ],
 
     /*

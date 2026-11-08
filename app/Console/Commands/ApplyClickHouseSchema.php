@@ -7,8 +7,7 @@ use Illuminate\Console\Command;
 
 class ApplyClickHouseSchema extends Command
 {
-    protected $signature = 'zones:ch-migrate
-                            {--materialize : Rewrite all zone_names parts to build the name_rev_order projection}';
+    protected $signature = 'zones:ch-migrate';
 
     protected $description = 'Create or update the ClickHouse tables used by DropWatch';
 
@@ -52,12 +51,7 @@ class ApplyClickHouseSchema extends Command
             @unlink($file);
         }
 
-        // Reading the corpus goes through the weaker_corpus view, where
-        // projections do not apply, so the rewrite is opt-in. On a large
-        // zone_names it rebuilds every part.
-        if ($this->option('materialize')) {
-            $this->materializeProjection($clickhouse, $database);
-        }
+        $this->materializeProjection($clickhouse, $database);
 
         $this->info('ClickHouse schema applied to '.$database.'.');
 

@@ -8,7 +8,7 @@ use Tests\TestCase;
 class NetworkPolicyTest extends TestCase
 {
     /**
-     * The only files allowed to make an outbound HTTP call.
+     * The only two files allowed to make an outbound HTTP call.
      *
      * @return array<int, string>
      */
@@ -17,11 +17,10 @@ class NetworkPolicyTest extends TestCase
         return [
             'Services/Czds/CzdsClient.php',
             'Services/ClickHouse/ClickHouseClient.php',
-            'Services/PendingDelete/PendingDeleteClient.php',
         ];
     }
 
-    public function test_only_the_dataset_clients_make_http_calls(): void
+    public function test_only_the_czds_and_clickhouse_clients_make_http_calls(): void
     {
         $offenders = [];
 
@@ -41,7 +40,7 @@ class NetworkPolicyTest extends TestCase
             }
         }
 
-        $this->assertSame([], $offenders, 'Outbound HTTP is only allowed in the CZDS, ClickHouse and PendingDelete clients.');
+        $this->assertSame([], $offenders, 'Outbound HTTP is only allowed in the CZDS and ClickHouse clients.');
     }
 
     public function test_the_allowed_clients_exist(): void

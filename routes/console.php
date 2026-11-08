@@ -14,28 +14,15 @@ use Illuminate\Support\Facades\Schedule;
 |
 */
 
-// PendingDelete.net is the discovery source. Dropping today is the list that
-// feeds the daily candidates, so it refreshes every ten minutes. The pending
-// backlog and yesterday's drops change slowly and refresh less often.
-foreach ((array) config('pendingdelete.schedule', []) as $list => $cron) {
-    Schedule::command('pendingdelete:sync --list='.$list)
-        ->cron((string) $cron)
-        ->timezone('UTC')
-        ->withoutOverlapping()
-        ->onOneServer();
-}
-
-// The CZDS zone pipeline is kept for manual backfills only:
-//   php artisan zones:run
-
-// The corpus pins each TLD to its newest zone snapshot, so it is rewritten
-// once a day and after any manual zone load:
-//   php artisan zones:refresh-corpus
-Schedule::command('zones:refresh-corpus')
-    ->dailyAt('00:20')
+// The daily zone pipeline. ICANN publishes after 06:00 UTC, so the run starts
+// at 08:00 UTC (09:00 Africa/Lagos) to give the files time to appear. The
+// schedule timezone is explicit: ZONES_SCHEDULE is a cron expression in UTC.
+Schedule::command('zones:run')
+    ->cron((string) config('zones.schedule', '0 8 * * *'))
     ->timezone('UTC')
     ->withoutOverlapping()
-    ->onOneServer();
+    ->onOneServer()
+    ->runInBackground(false);
 
 // Worker heartbeat. The light in the dashboard turns red when this stops.
 Schedule::job(new WorkerHeartbeat)
